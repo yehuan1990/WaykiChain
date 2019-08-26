@@ -53,6 +53,8 @@ coin_CORE_H = \
   entities/receipt.h \
   entities/vote.h \
   addrman.h \
+  consensus/consensus.h \
+  consensus/forkpool.h \
   alert.h \
   allocators.h \
   base58.h \
@@ -309,6 +311,7 @@ libcoin_common_a_SOURCES = \
   commons/bloom.cpp \
   commons/util.cpp \
   crypto/hash.cpp \
+  consensus/forkpool.cpp \
   config/chainparams.cpp \
   config/configuration.cpp \
   config/version.cpp \

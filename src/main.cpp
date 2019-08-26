@@ -30,6 +30,9 @@
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <memory>
+#include "consensus/consensus.h"
+#include "consensus/forkpool.h"
+#include "config/chainparams.h"
 
 using namespace json_spirit;
 using namespace std;
@@ -2143,6 +2146,34 @@ bool CheckBlock(const CBlock &block, CValidationState &state, CCacheWrapper &cw,
     return true;
 }
 
+
+bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp){
+
+    // Write block to history file
+
+    uint32_t height = irrBlock.GetHeight() ;
+
+    try {
+        uint32_t nBlockSize = ::GetSerializeSize(irrBlock, SER_DISK, CLIENT_VERSION);
+        CDiskBlockPos blockPos;
+        if (dbp != nullptr)
+            blockPos = *dbp;
+
+        if (!FindBlockPos(state, blockPos, nBlockSize + 8, height, irrBlock.GetTime(), dbp != nullptr))
+            return ERRORMSG("AcceptBlock() : FindBlockPos failed");
+
+        if (dbp == nullptr && !WriteBlockToDisk(irrBlock, blockPos))
+            return state.Abort(_("Failed to write block"));
+
+        if (!AddToBlockIndex(irrBlock, state, blockPos))
+            return ERRORMSG("AcceptBlock() : AddToBlockIndex failed");
+
+    } catch (std::runtime_error &e) {
+        return state.Abort(_("System error: ") + e.what());
+    }
+    return true ;
+
+}
 bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     AssertLockHeld(cs_main);
 
@@ -2180,14 +2211,16 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         if (block.GetBlockTime() <= pBlockIndexPrev->GetBlockTime() ||
             (block.GetBlockTime() - pBlockIndexPrev->GetBlockTime()) < GetBlockInterval(block.GetHeight())) {
             return state.Invalid(ERRORMSG("AcceptBlock() : the new block came in too early"),
-                                REJECT_INVALID, "time-too-early");
+                                 REJECT_INVALID, "time-too-early");
         }
+/*
 
         // Process forked branch
         if (!ProcessForkedChain(block, pBlockIndexPrev, state)) {
             LogPrint("INFO", "ProcessForkedChain() end: %lld ms\n", GetTimeMillis() - beginTime);
             return state.DoS(100, ERRORMSG("AcceptBlock() : check proof of pos tx"), REJECT_INVALID, "bad-pos-tx");
         }
+*/
 
         // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has been upgraded:
         if (block.GetVersion() < 2) {
@@ -2198,38 +2231,37 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         }
     }
 
-    // Write block to history file
-    try {
-        uint32_t nBlockSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
-        CDiskBlockPos blockPos;
-        if (dbp != nullptr)
-            blockPos = *dbp;
 
-        if (!FindBlockPos(state, blockPos, nBlockSize + 8, height, block.GetTime(), dbp != nullptr))
-            return ERRORMSG("AcceptBlock() : FindBlockPos failed");
+    //add to fork pool
+    forkPool.AddBlock(block) ;
 
-        if (dbp == nullptr && !WriteBlockToDisk(block, blockPos))
-            return state.Abort(_("Failed to write block"));
-
-        if (!AddToBlockIndex(block, state, blockPos))
-            return ERRORMSG("AcceptBlock() : AddToBlockIndex failed");
-
-    } catch (std::runtime_error &e) {
-        return state.Abort(_("System error: ") + e.what());
-    }
 
     // Relay inventory, but don't relay old inventory during initial block download
-    if (chainActive.Tip()->GetBlockHash() == blockHash) {
-        LOCK(cs_vNodes);
-        for (auto pNode : vNodes) {
-            if (chainActive.Height() > (pNode->nStartingHeight != -1 ? pNode->nStartingHeight - 2000 : 0))
-                pNode->PushInventory(CInv(MSG_BLOCK, blockHash));
-        }
+    //if (chainActive.Tip()->GetBlockHash() == blockHash) {
+    LOCK(cs_vNodes);
+    for (auto pNode : vNodes) {
+        if (chainActive.Height() > (pNode->nStartingHeight != -1 ? pNode->nStartingHeight - 2000 : 0))
+            pNode->PushInventory(CInv(MSG_BLOCK, blockHash));
     }
+    //}
 
     return true;
 }
 
+bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
+
+    while(true){
+        auto irreversibleList = DetermineIrreversibleList() ;
+        for( auto irrBlock: irreversibleList){
+            persistBlock(irrBlock,state, dbp) ;
+            forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
+            currentIrreversibleTop = irrBlock ;
+        }
+        ::MilliSleep(1000) ;
+    }
+
+
+}
 bool CBlockIndex::IsSuperMajority(int32_t minVersion, const CBlockIndex *pstart, uint32_t nRequired, uint32_t nToCheck) {
     uint32_t nFound = 0;
     for (uint32_t i = 0; i < nToCheck && nFound < nRequired && pstart != nullptr; i++) {
@@ -2346,15 +2378,14 @@ void PushGetBlocksOnCondition(CNode *pNode, CBlockIndex *pindexBegin, uint256 ha
     }
 }
 
-bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBlockPos *dbp) {
-    int64_t llBeginTime = GetTimeMillis();
-    //  LogPrint("INFO", "ProcessBlock() enter:%lld\n", llBeginTime);
+bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
+
     AssertLockHeld(cs_main);
     // Check for duplicate
     uint256 blockHash = pBlock->GetHash();
     if (mapBlockIndex.count(blockHash))
         return state.Invalid(ERRORMSG("ProcessBlock() : block exists: %d %s",
-                            mapBlockIndex[blockHash]->height, blockHash.ToString()), 0, "duplicate");
+                                      mapBlockIndex[blockHash]->height, blockHash.ToString()), 0, "duplicate");
 
     if (mapOrphanBlocks.count(blockHash))
         return state.Invalid(ERRORMSG("ProcessBlock() : block (orphan) exists %s", blockHash.ToString()), 0, "duplicate");
@@ -2365,10 +2396,25 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
     // Preliminary checks
     if (!CheckBlock(*pBlock, state, *spCW, false)) {
         LogPrint("INFO", "CheckBlock() height: %d elapse time:%lld ms\n",
-                chainActive.Height(), GetTimeMillis() - llBeginCheckBlockTime);
+                 chainActive.Height(), GetTimeMillis() - llBeginCheckBlockTime);
 
         return ERRORMSG("ProcessBlock() : block hash:%s CheckBlock FAILED", pBlock->GetHash().GetHex());
     }
+    return true ;
+
+}
+
+bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBlockPos *dbp) {
+    int64_t llBeginTime = GetTimeMillis();
+
+
+    //check and validate the new Block
+    if(!CheckBlock(state , pFrom, pBlock)){
+        return false;
+    }
+
+
+    uint256 blockHash = pBlock->GetHash();
 
     // If we don't already have its previous block, shunt it off to holding area until we get it
     if (!pBlock->GetPrevBlockHash().IsNull() && !mapBlockIndex.count(pBlock->GetPrevBlockHash())) {
@@ -2376,6 +2422,7 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
             LogPrint("DEBUG", "blockHeight=%d syncTipHeight=%d\n", pBlock->GetHeight(), nSyncTipHeight );
             nSyncTipHeight = pBlock->GetHeight();
         }
+
 
         // Accept orphans as long as there is a node to request its parents from
         if (pFrom) {
@@ -2397,21 +2444,24 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
 
             // Ask this guy to fill in what we're missing
             LogPrint("net", "receive an orphan block height=%d hash=%s, %s it, leading to getblocks (current height=%d & orphan blocks=%d)\n",
-                    pBlock->GetHeight(), pBlock->GetHash().GetHex(), success ? "keep" : "abandon",
-                    chainActive.Height(), mapOrphanBlocksByPrev.size());
+                     pBlock->GetHeight(), pBlock->GetHash().GetHex(), success ? "keep" : "abandon",
+                     chainActive.Height(), mapOrphanBlocksByPrev.size());
 
             PushGetBlocksOnCondition(pFrom, chainActive.Tip(), GetOrphanRoot(blockHash));
         }
         return true;
     }
 
-    int64_t llAcceptBlockTime = GetTimeMillis();
+
     // Store to disk
+    int64_t llAcceptBlockTime = GetTimeMillis();
     if (!AcceptBlock(*pBlock, state, dbp)) {
         LogPrint("INFO", "AcceptBlock() elapse time: %lld ms\n", GetTimeMillis() - llAcceptBlockTime);
         return ERRORMSG("ProcessBlock() : AcceptBlock FAILED");
     }
     // LogPrint("INFO", "AcceptBlock() elapse time:%lld ms\n", GetTimeMillis() - llAcceptBlockTime);
+
+
 
     // Recursively process any orphan blocks that depended on this one
     vector<uint256> vWorkQueue;
@@ -2444,6 +2494,7 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
     LogPrint("INFO", "ProcessBlock() elapse time:%lld ms\n", GetTimeMillis() - llBeginTime);
     return true;
 }
+
 
 CMerkleBlock::CMerkleBlock(const CBlock &block, CBloomFilter &filter) {
     header = block.GetBlockHeader();
@@ -3539,12 +3590,13 @@ bool IsInitialBlockDownload() {
 
     static int64_t nLastUpdate;
     static CBlockIndex *pIndexLastBest;
-    if (chainActive.Tip() != pIndexLastBest) {
-        pIndexLastBest = chainActive.Tip();
+
+    if (preBlockIndex() != pIndexLastBest) {
+        pIndexLastBest = preBlockIndex() ;
         nLastUpdate    = GetTime();
     }
 
-    return (GetTime() - nLastUpdate < 10 && chainActive.Tip()->GetBlockTime() < GetTime() - 24 * 60 * 60);
+    return (GetTime() - nLastUpdate < SysCfg().GetBlockIntervalPreStableCoinRelease() && chainActive.Tip()->GetBlockTime() < GetTime() - 24 * 60 * 60);
 }
 
 FILE *OpenDiskFile(const CDiskBlockPos &pos, const char *prefix, bool fReadOnly) {

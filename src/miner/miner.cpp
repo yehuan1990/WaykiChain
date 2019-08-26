@@ -18,7 +18,7 @@
 
 #include <algorithm>
 #include <boost/circular_buffer.hpp>
-
+#include "consensus/consensus.h"
 
                                                                                                    \
 
@@ -324,7 +324,9 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
     {
         LOCK2(cs_main, mempool.cs);
 
-        CBlockIndex *pIndexPrev = chainActive.Tip();
+
+
+        CBlockIndex *pIndexPrev = preBlockIndex();
         int32_t height          = pIndexPrev->height + 1;
         int32_t index           = 0; // block reward tx
         uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
@@ -453,8 +455,10 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock() {
         SysCfg().CreateFundCoinRewardTx(pBlock->vptx, SysCfg().NetworkID());
 
         // Fill in header
-        CBlockIndex *pIndexPrev = chainActive.Tip();
-        int32_t height          = pIndexPrev->height + 1;
+
+
+        CBlockIndex *pIndexPrev            = preBlockIndex() ;
+        uint32_t height = pIndexPrev->height + 1 ;
         uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
 
         pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
@@ -497,7 +501,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
     {
         LOCK2(cs_main, mempool.cs);
 
-        CBlockIndex *pIndexPrev            = chainActive.Tip();
+        CBlockIndex *pIndexPrev            = preBlockIndex();
         int32_t height                     = pIndexPrev->height + 1;
         int32_t index                      = 1; // 0: block reward tx; 1: median price tx
         uint32_t fuelRate                  = GetElementForBurn(pIndexPrev);
@@ -635,7 +639,7 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet) {
     // Found a solution
     {
         LOCK(cs_main);
-        if (pBlock->GetPrevBlockHash() != chainActive.Tip()->GetBlockHash())
+        if (pBlock->GetPrevBlockHash() != preBlockIndex()->GetBlockHash())
             return ERRORMSG("CheckWork() : generated block is stale");
 
         // Process this block the same as if we received it from another node
@@ -648,7 +652,7 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet) {
 }
 
 bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev, uint32_t txUpdated,
-                      CCacheWrapper &cw) {
+                      CCacheWrapper &cw,CBlock preBlock) {
     int64_t nStart = GetTime();
 
     while (true) {
@@ -659,12 +663,12 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         if (vNodes.empty() && SysCfg().NetworkID() != REGTEST_NET)
             return false;
 
-        if (pIndexPrev != chainActive.Tip())
+        if (preBlock.GetHash() != DeterminePreBlock().GetHash())
             return false;
 
         // Take a sleep and check.
         [&]() {
-            int64_t whenCanIStart = pIndexPrev->GetBlockTime() + GetBlockInterval(chainActive.Height() + 1);
+            int64_t whenCanIStart = preBlock.GetBlockTime() + GetBlockInterval(preBlock.GetHeight() + 1);
             while (GetTime() < whenCanIStart) {
                 ::MilliSleep(100);
             }
@@ -782,8 +786,10 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             if (SysCfg().NetworkID() != REGTEST_NET) {
                 // Busy-wait for the network to come online so we don't waste time mining
                 // on an obsolete chain. In regtest mode we expect to fly solo.
-                while (vNodes.empty() || (chainActive.Tip() && chainActive.Height() > 1 &&
-                                          GetAdjustedTime() - chainActive.Tip()->nTime > 60 * 60 &&
+
+                CBlockIndex* preBlock = preBlockIndex() ;
+                while (vNodes.empty() || (preBlock && preBlock->height > 1 &&
+                                          GetAdjustedTime() - preBlock->nTime > 60 * 60 &&
                                           !SysCfg().GetBoolArg("-genblockforce", false))) {
                     MilliSleep(1000);
                 }
@@ -796,8 +802,11 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             //
             int64_t lastTime        = GetTimeMillis();
             uint32_t txUpdated      = mempool.GetUpdatedTransactionNum();
+
+            CBlock preBlock = DeterminePreBlock() ;
+            CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = chainActive.Height() + 1;
-            CBlockIndex *pIndexPrev = chainActive.Tip();
+
 
             auto spCW   = std::make_shared<CCacheWrapper>(pCdMan);
             auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
@@ -816,7 +825,7 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             // Attention: need to reset delegate cache to compute the miner account according to received votes ranking
             // list.
             spCW->delegateCache.Clear();
-            MineBlock(pBlock.get(), pWallet, pIndexPrev, txUpdated, *spCW);
+            MineBlock(pBlock.get(), pWallet, pIndexPrev, txUpdated, *spCW, preBlock);
 
             if (SysCfg().NetworkID() != MAIN_NET && targetHeight <= GetCurrHeight())
                 throw boost::thread_interrupted();
