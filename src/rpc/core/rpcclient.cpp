@@ -132,27 +132,12 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<int64_t>(params[1]);
 
-    if (strMethod == "sendtoaddress"          && n == 2) ConvertTo<double>(params[1]);
-    if (strMethod == "sendtoaddress"          && n == 3) ConvertTo<double>(params[2]);
-
-    if (strMethod == "sendtoaddresswithmemo"  && n == 4) ConvertTo<double>(params[2]);
-
-
-    if (strMethod == "sendtoaddresswithfee"   && n == 3) { ConvertTo<double>(params[1]); ConvertTo<double>(params[2]); }
-    if (strMethod == "sendtoaddresswithfee"   && n == 4) { ConvertTo<double>(params[2]); ConvertTo<double>(params[3]); }
-
     // if (strMethod == "dispersebalance"        && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]); // deprecated
     if (strMethod == "getbalance"             && n > 1) ConvertTo<int64_t>(params[1]);
     if (strMethod == "getblockhash"           && n > 0) ConvertTo<int64_t>(params[0]);
-    if (strMethod == "move"                   && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "move"                   && n > 3) ConvertTo<int64_t>(params[3]);
-    if (strMethod == "sendfrom"               && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "sendfrom"               && n > 3) ConvertTo<int64_t>(params[3]);
 
     if (strMethod == "walletpassphrase"       && n > 1) ConvertTo<int64_t>(params[1]);
-    if (strMethod == "getblocktemplate"       && n > 0) ConvertTo<Object>(params[0]);
-    if (strMethod == "listsinceblock"         && n > 1) ConvertTo<int64_t>(params[1]);
 
     if (strMethod == "addmulsigaddr"          && n > 0) ConvertTo<int64_t>(params[0]);
     if (strMethod == "addmulsigaddr"          && n > 1) ConvertTo<Array>(params[1]);
@@ -170,18 +155,18 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
 
     if (strMethod == "getnewaddr"             && n > 0) ConvertTo<bool>(params[0]);
 
-    if (strMethod == "registeraccounttx"      && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "submitaccountregistertx"      && n > 1) ConvertTo<int64_t>(params[1]);
 
-    if(strMethod == "votedelegatetx"          && n > 1) ConvertTo<Array>(params[1]);
-    if(strMethod == "votedelegatetx"          && n > 2) ConvertTo<int64_t>(params[2]);
-    if(strMethod == "votedelegatetx"          && n > 3) ConvertTo<int>(params[3]);
+    if(strMethod == "submitdelegatevotetx"          && n > 1) ConvertTo<Array>(params[1]);
+    if(strMethod == "submitdelegatevotetx"          && n > 2) ConvertTo<int64_t>(params[2]);
+    if(strMethod == "submitdelegatevotetx"          && n > 3) ConvertTo<int>(params[3]);
 
-    if (strMethod == "deploycontracttx"     && n > 2) ConvertTo<int64_t>(params[2]);
-    if (strMethod == "deploycontracttx"     && n > 3) ConvertTo<int>(params[3]);
+    if (strMethod == "submitcontractdeploytx"       && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "submitcontractdeploytx"       && n > 3) ConvertTo<int>(params[3]);
 
-    if (strMethod == "callcontracttx"         && n > 3) ConvertTo<int64_t>(params[3]);
-    if (strMethod == "callcontracttx"         && n > 4) ConvertTo<int64_t>(params[4]);
-    if (strMethod == "callcontracttx"         && n > 5) ConvertTo<int>(params[5]);
+    if (strMethod == "submitcontractcalltx"         && n > 3) ConvertTo<int64_t>(params[3]);
+    if (strMethod == "submitcontractcalltx"         && n > 4) ConvertTo<int64_t>(params[4]);
+    if (strMethod == "submitcontractcalltx"         && n > 5) ConvertTo<int>(params[5]);
 
     if (strMethod == "listaddr"               && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "listunconfirmedtx"      && n > 0) ConvertTo<bool>(params[0]);
@@ -191,27 +176,9 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "getblock"               && n > 0) { if (params[0].get_str().size()<32) ConvertTo<int>(params[0]);}
 
     /****** generate a digitally signed raw transaction for network submission via sendtxraw  **********/
-    if (strMethod == "genregisteraccountraw"  && n > 0) ConvertTo<double>(params[0]);
-    if (strMethod == "genregisteraccountraw"  && n > 1) ConvertTo<int>(params[1]);
-
-    if (strMethod == "gensendtoaddressraw"    && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "gensendtoaddressraw"    && n > 3) ConvertTo<double>(params[3]);
-    if (strMethod == "gensendtoaddressraw"    && n > 4) ConvertTo<int>(params[4]);
-
-    if (strMethod == "genregistercontractraw" && n > 2) ConvertTo<int64_t>(params[2]);
-    if (strMethod == "genregistercontractraw" && n > 3) ConvertTo<int>(params[3]);
-
-    if (strMethod == "gencallcontractraw"     && n > 3) ConvertTo<int64_t>(params[3]);
-    if (strMethod == "gencallcontractraw"     && n > 4) ConvertTo<int64_t>(params[4]);
-    if (strMethod == "gencallcontractraw"     && n > 5) ConvertTo<int>(params[5]);
-
-    if (strMethod == "genvotedelegateraw"     && n > 1) ConvertTo<Array>(params[1]);
-    if (strMethod == "genvotedelegateraw"     && n > 2) ConvertTo<int64_t>(params[2]);
-    if (strMethod == "genvotedelegateraw"     && n > 3) ConvertTo<int>(params[3]);
-
-    if (strMethod == "genmulsigtx"            && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "genmulsigtx"            && n > 3) ConvertTo<double>(params[3]);
-    if (strMethod == "genmulsigtx"            && n > 4) ConvertTo<int>(params[4]);
+    if (strMethod == "genmulsigtx"         && n > 2) ConvertTo<double>(params[2]);
+    if (strMethod == "genmulsigtx"         && n > 3) ConvertTo<double>(params[3]);
+    if (strMethod == "genmulsigtx"         && n > 4) ConvertTo<int>(params[4]);
 
     /********************************************************************************************************************/
     if (strMethod == "getcontractdata"        && n > 2) ConvertTo<bool>(params[2]);
@@ -255,12 +222,12 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     /* for cdp */
     if (strMethod == "submitpricefeedtx"        && n > 1) ConvertTo<Array>(params[1]);
 
-    if (strMethod == "submitstakefcointx"       && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "submitfcoinstaketx"       && n > 1) ConvertTo<int64_t>(params[1]);
 
-    if (strMethod == "submitredeemcdptx"        && n > 2) ConvertTo<int64_t>(params[2]);
-    if (strMethod == "submitredeemcdptx"        && n > 3) ConvertTo<int64_t>(params[3]);
+    if (strMethod == "submitcdpredeemtx"        && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "submitcdpredeemtx"        && n > 3) ConvertTo<int64_t>(params[3]);
 
-    if (strMethod == "submitliquidatecdptx"     && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "submitcdpliquidatetx"     && n > 2) ConvertTo<int64_t>(params[2]);
 
     if (strMethod == "submitassetissuetx"       && n > 4) ConvertTo<int64_t>(params[4]);
     if (strMethod == "submitassetissuetx"       && n > 5) ConvertTo<bool>(params[5]);

@@ -286,291 +286,28 @@ Value signmessage(const Array& params, bool fHelp)
     return EncodeBase64(&vchSig[0], vchSig.size());
 }
 
-static std::tuple<bool, string> SendMoney(const CKeyID& sendKeyId, const CKeyID& recvKeyId, const int64_t nValue,
-                                          const int64_t nFee, const string &memo) {
-    /**
-     * We need to choose the proper field as the sender/receiver's account according to
-     * the two factor: whether the sender's account is registered or not, whether the
-     * RegID is mature or not.
-     *
-     * |-------------------------------|-------------------|-------------------|
-     * |                               |      SENDER       |      RECEIVER     |
-     * |-------------------------------|-------------------|-------------------|
-     * | NOT registered                |     Public Key    |      Key ID       |
-     * |-------------------------------|-------------------|-------------------|
-     * | registered BUT immature       |     Public Key    |      Key ID       |
-     * |-------------------------------|-------------------|-------------------|
-     * | registered AND mature         |     Reg ID        |      Reg ID       |
-     * |-------------------------------|-------------------|-------------------|
-     */
-    CPubKey sendPubKey;
-    if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey))
-        return std::make_tuple(false, "Key not found in the local wallet.");
-
-    int32_t height = chainActive.Height();
-    CUserID sendUserId, recvUserId;
-    CRegID sendRegId, recvRegId;
-    sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
-                     ? CUserID(sendRegId)
-                     : CUserID(sendPubKey);
-    recvUserId = (pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
-                     ? CUserID(recvRegId)
-                     : CUserID(recvKeyId);
-    CBaseCoinTransferTx tx;
-    tx.txUid        = sendUserId;
-    tx.toUid        = recvUserId;
-    tx.coin_amount  = nValue;
-    tx.llFees       = (0 == nFee) ? SysCfg().GetTxFee() : nFee;
-    tx.memo         = memo;
-    tx.valid_height = height;
-
-    if (!pWalletMain->Sign(sendKeyId, tx.ComputeSignatureHash(), tx.signature)) {
-        return std::make_tuple(false, "Sign failed");
-    }
-
-    std::tuple<bool, string> ret = pWalletMain->CommitTx((CBaseTx*)&tx);
-    bool flag                    = std::get<0>(ret);
-    string te                    = std::get<1>(ret);
-    if (flag) {
-        te = tx.GetHash().ToString();
-    }
-
-    return std::make_tuple(flag, te.c_str());
-}
-
-Value sendtoaddress(const Array& params, bool fHelp) {
-    int size = params.size();
-    if (fHelp || (size != 2 && size != 3))
+Value submitsendtx(const Array& params, bool fHelp) {
+    if (fHelp || (params.size() != 4 && params.size() != 5))
         throw runtime_error(
-            "sendtoaddress (\"sendaddress\") \"recvaddress\" \"amount\"\n"
-            "\nSend an amount to a given address.\n" +
-            HelpRequiringPassphrase() +
-            "\nArguments:\n"
-            "1.\"sendaddress\"  (string, optional) The address where coins are sent from.\n"
-            "2.\"recvaddress\"  (string, required) The address where coins are received.\n"
-            "3.\"amount\"       (numberic, required)\n"
-            "\nResult:\n"
-            "\"txid\" (string) The transaction id.\n"
-            "\nExamples:\n" +
-            HelpExampleCli("sendtoaddress", "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\" 10000000") +
-            "\nAs json rpc call\n" +
-            HelpExampleRpc("sendtoaddress", "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\", 10000000"));
-
-    EnsureWalletIsUnlocked();
-
-    CKeyID sendKeyId, recvKeyId;
-    int64_t nAmount = 0;
-    int64_t nDefaultFee = SysCfg().GetTxFee();
-
-    if (size == 3) {
-        if (!GetKeyId(params[0].get_str(), sendKeyId))
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
-
-        if (!GetKeyId(params[1].get_str(), recvKeyId))
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-
-        nAmount = AmountToRawValue(params[2]);
-        if (pCdMan->pAccountCache->GetAccountFreeAmount(sendKeyId, SYMB::WICC) < (uint64_t) (nAmount + nDefaultFee))
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sendaddress does not have enough coins");
-    } else {
-        if (!GetKeyId(params[0].get_str(), recvKeyId))
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-
-        nAmount = AmountToRawValue(params[1]);
-
-        set<CKeyID> keyids;
-        keyids.clear();
-        pWalletMain->GetKeys(keyids);
-        if (keyids.empty())
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet has no key");
-
-        bool sufficientFee = false;
-        for (auto keyId : keyids) {
-            if (keyId != recvKeyId &&
-                (pCdMan->pAccountCache->GetAccountFreeAmount(keyId, SYMB::WICC) >= (uint64_t(nAmount + nDefaultFee)))) {
-                sendKeyId     = keyId;
-                sufficientFee = true;
-                break;
-            }
-        }
-        if (!sufficientFee) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
-                "Can't find any account with sufficient coins in wallet to send");
-        }
-    }
-
-    std::tuple<bool, string> ret = SendMoney(sendKeyId, recvKeyId, nAmount, nDefaultFee,"");
-
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-    }
-
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-    return obj;
-}
-
-
-Value sendtoaddresswithmemo(const Array& params, bool fHelp) {
-    int size = params.size();
-    if (fHelp || (size != 4))
-        throw runtime_error(
-                "sendtoaddresswithmemo (\"sendaddresswithmemo\") \"sendaddress\" \"recvaddress\" \"amount\" \"memo\" \n"
-                "\nSend an amount to a given address.\n" +
-                HelpRequiringPassphrase() +
-                "\nArguments:\n"
-                "1.\"sendaddress\" (string, required) The address where coins are sent from.\n"
-                "2.\"recvaddress\" (string, required) The address where coins are received.\n"
-                "3.\"amount\" (string, required)\n"
-                "4. \"memo\" (string, required) \n"
-                "\nResult:\n"
-                "\"txid\" (string) The transaction id.\n"
-                "\nExamples:\n" +
-                HelpExampleCli("sendtoaddress", "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\" 10000000") +
-                "\nAs json rpc call\n" +
-                HelpExampleRpc("sendtoaddress", "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\", 10000000"));
-
-    EnsureWalletIsUnlocked();
-
-    CKeyID sendKeyId, recvKeyId;
-    int64_t nAmount = 0;
-    int64_t nDefaultFee = SysCfg().GetTxFee();
-    string memo = "" ;
-
-    if (!GetKeyId(params[0].get_str(), sendKeyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
-
-    if (!GetKeyId(params[1].get_str(), recvKeyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-
-    nAmount = AmountToRawValue(params[2]);
-    if (pCdMan->pAccountCache->GetAccountFreeAmount(sendKeyId, SYMB::WICC) < (uint64_t) (nAmount + nDefaultFee))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sendaddress does not have enough coins");
-
-    memo = params[3].get_str() ;
-    if( memo.size() > MAX_COMMON_TX_MEMO_SIZE)
-        throw JSONRPCError(RPC_MEMO_SIZE_TOO_LONG, "the size of memo is too long");
-
-    std::tuple<bool, string> ret = SendMoney(sendKeyId, recvKeyId, nAmount, nDefaultFee, memo);
-
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-    }
-
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-    return obj;
-}
-
-Value sendtoaddresswithfee(const Array& params, bool fHelp) {
-    int size = params.size();
-    if (fHelp || (size != 3 && size != 4)) {
-        throw runtime_error(
-            "sendtoaddresswithfee (\"sendaddress\") \"recvaddress\" \"amount\" (fee)\n"
-            "\nSend an amount to a given address with fee.\n"
-            "\nArguments:\n"
-            "1.\"sendaddress\"  (string, optional) The Coin address to send to.\n"
-            "2.\"recvaddress\"  (string, required) The Coin address to receive.\n"
-            "3.\"amount\"       (string, required)\n"
-            "4.\"fee\"          (string, required)\n"
-            "\nResult:\n"
-            "\"txid\"  (string) The transaction id.\n"
-            "\nExamples:\n" +
-            HelpExampleCli("sendtoaddress",
-                           "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\" 10000000 10000") +
-            "\nAs json rpc call\n" +
-            HelpExampleRpc("sendtoaddress",
-                           "\"wQquTWgzNzLtjUV4Du57p9YAEGdKvgXs9t\", 10000000, 10000"));
-    }
-
-    EnsureWalletIsUnlocked();
-
-    CKeyID sendKeyId, recvKeyId;
-    int64_t nAmount     = 0;
-    int64_t nFee        = 0;
-    int64_t nActualFee  = 0;
-    int64_t nDefaultFee = SysCfg().GetTxFee();
-
-    if (size == 4) {
-        if (!GetKeyId(params[0].get_str(), sendKeyId)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
-        }
-        if (!GetKeyId(params[1].get_str(), recvKeyId)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-        }
-        nAmount    = AmountToRawValue(params[2]);
-        nFee       = AmountToRawValue(params[3]);
-        nActualFee = max(nDefaultFee, nFee);
-        if (nFee < nDefaultFee) {
-            throw JSONRPCError(RPC_INSUFFICIENT_FEE,
-                               strprintf("Given fee(%ld) < Default fee (%ld)", nFee, nDefaultFee));
-        }
-
-        if (pCdMan->pAccountCache->GetAccountFreeAmount(sendKeyId, SYMB::WICC) < (uint64_t(nAmount + nActualFee))) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sendaddress does not have enough coins");
-        }
-    } else {  // sender address omitted
-        if (!GetKeyId(params[0].get_str(), recvKeyId)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-        }
-        nAmount    = AmountToRawValue(params[1]);
-        nFee       = AmountToRawValue(params[2]);
-        nActualFee = max(nDefaultFee, nFee);
-        if (nFee < nDefaultFee) {
-            throw JSONRPCError(RPC_INSUFFICIENT_FEE,
-                               strprintf("Given fee(%ld) < Default fee (%ld)", nFee, nDefaultFee));
-        }
-
-        set<CKeyID> keyids;
-        keyids.clear();
-        pWalletMain->GetKeys(keyids);
-        if (keyids.empty()) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Wallet has no key!");
-        }
-        bool sufficientFee = false;
-        for (auto keyId : keyids) {
-            if (keyId != recvKeyId &&
-                (pCdMan->pAccountCache->GetAccountFreeAmount(keyId, SYMB::WICC) >= (uint64_t(nAmount + nDefaultFee)))) {
-                sendKeyId     = keyId;
-                sufficientFee = true;
-                break;
-            }
-        }
-        if (!sufficientFee) {
-            throw JSONRPCError(RPC_INSUFFICIENT_FEE,
-                "Can't find any account with sufficient coins in wallet to send");
-        }
-    }
-
-    std::tuple<bool, string> ret = SendMoney(sendKeyId, recvKeyId, nAmount, nFee, "");
-
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-    }
-
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-    return obj;
-}
-
-Value send(const Array& params, bool fHelp) {
-    if (fHelp || (params.size() != 3 && params.size() != 4))
-        throw runtime_error(
-            "send \"from\" \"to\" \"symbol:coin:unit\" [\"symbol:fee:unit\"]\n"
+            "submitsendtx \"from\" \"to\" \"symbol:coin:unit\" \"symbol:fee:unit\" (\"memo\")\n"
             "\nSend coins to a given address.\n" +
             HelpRequiringPassphrase() +
             "\nArguments:\n"
             "1.\"from\"                 (string, required) The address where coins are sent from.\n"
             "2.\"to\"                   (string, required) The address where coins are received.\n"
-            "3.\"symbol:coin:unit\":    (symbol:amount:unit, required) transfered coins\n"
-            "4.\"symbol:fee:unit\":     (symbol:amount:unit, optional) fee paid to miner, default is WICC:10000:sawi\n"
+            "3.\"symbol:coin:unit\":    (symbol:amount:unit, required) transferred coins\n"
+            "4.\"symbol:fee:unit\":     (symbol:amount:unit, required) fee paid to miner, default is WICC:10000:sawi\n"
+            "5.\"memo\":                (string, optional)\n"
             "\nResult:\n"
             "\"txid\"                   (string) The transaction id.\n"
             "\nExamples:\n" +
-            HelpExampleCli("send", "\"wLKf2NqwtHk3BfzK5wMDfbKYN1SC3weyR4\" \"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\" \"WICC:1000000:sawi\"\n") +
+            HelpExampleCli("submitsendtx",
+                           "\"wLKf2NqwtHk3BfzK5wMDfbKYN1SC3weyR4\" \"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\" "
+                           "\"WICC:1000000:sawi\" \"Hello, WaykiChain!\"") +
             "\nAs json rpc call\n" +
-            HelpExampleRpc("send", "\"wLKf2NqwtHk3BfzK5wMDfbKYN1SC3weyR4\", \"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\", \"WICC:1000000:sawi\"\n")
-        );
+            HelpExampleRpc("submitsendtx",
+                           "\"wLKf2NqwtHk3BfzK5wMDfbKYN1SC3weyR4\", \"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\", "
+                           "\"WICC:1000000:sawi\", \"Hello, WaykiChain!\""));
 
     CKeyID sendKeyId, recvKeyId;
     if (!GetKeyId(params[0].get_str(), sendKeyId))
@@ -588,6 +325,21 @@ Value send(const Array& params, bool fHelp) {
     if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey))
         throw JSONRPCError(RPC_WALLET_ERROR, "Sender account not found in wallet");
 
+    /**
+     * We need to choose the proper field as the sender/receiver's account according to
+     * the two factor: whether the sender's account is registered or not, whether the
+     * RegID is mature or not.
+     *
+     * |-------------------------------|-------------------|-------------------|
+     * |                               |      SENDER       |      RECEIVER     |
+     * |-------------------------------|-------------------|-------------------|
+     * | NOT registered                |     Public Key    |      Key ID       |
+     * |-------------------------------|-------------------|-------------------|
+     * | registered BUT immature       |     Public Key    |      Key ID       |
+     * |-------------------------------|-------------------|-------------------|
+     * | registered AND mature         |     Reg ID        |      Reg ID       |
+     * |-------------------------------|-------------------|-------------------|
+     */
     CUserID sendUserId, recvUserId;
     CRegID sendRegId, recvRegId;
     sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
@@ -641,8 +393,9 @@ Value send(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_PARSE_ERROR, "This currency is not currently supported.");
     }
 
-    // TOOD: memo
-    CCoinTransferTx tx(sendUserId, recvUserId, chainActive.Height(), coinSymbol, coinAmount, feeSymbol, fee, "");
+    string memo = params.size() == 5 ? params[4].get_str() : "";
+
+    CCoinTransferTx tx(sendUserId, recvUserId, chainActive.Height(), coinSymbol, coinAmount, feeSymbol, fee, memo);
 
     if (!pWalletMain->Sign(sendKeyId, tx.ComputeSignatureHash(), tx.signature))
         throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
@@ -655,94 +408,6 @@ Value send(const Array& params, bool fHelp) {
     Object obj;
     obj.push_back(Pair("txid", std::get<1>(ret)));
 
-    return obj;
-}
-
-Value gensendtoaddressraw(const Array& params, bool fHelp) {
-    int size = params.size();
-    if (fHelp || size < 4 || size > 5) {
-        throw runtime_error(
-            "gensendtoaddressraw \"sendaddress\" \"recvaddress\" \"amount\" \"fee\" \"height\"\n"
-            "\ncreate common transaction by sendaddress, recvaddress, amount, fee, height\n" +
-            HelpRequiringPassphrase() +
-            "\nArguments:\n"
-            "1.\"sendaddress\"  (string, required) The Coin address to send to.\n"
-            "2.\"recvaddress\"  (string, required) The Coin address to receive.\n"
-            "3.\"amount\"  (numeric, required)\n"
-            "4.\"fee\"     (numeric, required)\n"
-            "5.\"height\"  (int, optional)\n"
-            "\nResult:\n"
-            "\"rawtx\"  (string) The raw transaction\n"
-            "\nExamples:\n" +
-            HelpExampleCli("gensendtoaddressraw",
-                           "\"WRJAnKvf8F8xdeuaceXJXz9AcNRdVvH5JG\" "
-                           "\"Wef9QkwAwBhtZaT3ASmMJzC7dt1kzo1xob\" 10000 10000 100") +
-            "\nAs json rpc call\n" +
-            HelpExampleRpc("gensendtoaddressraw",
-                           "\"WRJAnKvf8F8xdeuaceXJXz9AcNRdVvH5JG\", "
-                           "\"Wef9QkwAwBhtZaT3ASmMJzC7dt1kzo1xob\", 10000, 10000, 100"));
-    }
-
-    EnsureWalletIsUnlocked();
-
-    CKeyID sendKeyId, recvKeyId;
-    if (!GetKeyId(params[0].get_str(), sendKeyId)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
-    }
-
-    if (!GetKeyId(params[1].get_str(), recvKeyId)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-    }
-
-    int64_t amount = AmountToRawValue(params[2]);
-    int64_t fee    = AmountToRawValue(params[3]);
-    if (amount <= 0) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Send amount <= 0 error!");
-    }
-
-    int height = chainActive.Height();
-    if (params.size() > 4) {
-        height = params[4].get_int();
-        if (height <= 0) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid height");
-        }
-    }
-
-    CPubKey sendPubKey;
-    if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Key not found in the local wallet.");
-
-    CUserID sendUserId, recvUserId;
-    CRegID sendRegId, recvRegId;
-    sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) &&
-                sendRegId.IsMature(chainActive.Height())) ? CUserID(sendRegId) : CUserID(sendPubKey);
-
-    recvUserId = (pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId) &&
-                recvRegId.IsMature(chainActive.Height())) ? CUserID(recvRegId) : CUserID(recvKeyId);
-
-    CAccount fromAccount;
-    if (!pCdMan->pAccountCache->GetAccount(sendUserId, fromAccount))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sender User Account not found.");
-
-    if (fromAccount.GetToken(SYMB::WICC).free_amount < (uint64_t)amount)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Sender User Account insufficient amount to transfer");
-
-    CBaseCoinTransferTx tx;
-    tx.txUid        = sendUserId;
-    tx.toUid        = recvUserId;
-    tx.coin_amount  = amount;
-    tx.llFees       = fee;
-    tx.valid_height = height;
-
-    if (!pWalletMain->Sign(sendKeyId, tx.ComputeSignatureHash(), tx.signature)) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Sign failed");
-    }
-
-    CDataStream ds(SER_DISK, CLIENT_VERSION);
-    std::shared_ptr<CBaseTx> pBaseTx = tx.GetNewInstance();
-    ds << pBaseTx;
-    Object obj;
-    obj.push_back(Pair("rawtx", HexStr(ds.begin(), ds.end())));
     return obj;
 }
 
@@ -1197,7 +862,7 @@ Value walletlock(const Array& params, bool fHelp)
             "\nSet the passphrase for 2 minutes to perform a transaction\n"
             + HelpExampleCli("walletpassphrase", "\"my pass phrase\" 120") +
             "\nPerform a send (requires passphrase set)\n"
-            + HelpExampleCli("sendtoaddress", "\"1M72Sfpbz1BPpXFHz9m3CdqATR44Jvaydd\" 1.0") +
+            + HelpExampleCli("send", "\"0-1\" \"0-2\" 10000 10000") +
             "\nClear the passphrase since we are done before 2 minutes is up\n"
             + HelpExampleCli("walletlock", "") +
             "\nAs json rpc call\n"

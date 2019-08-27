@@ -124,8 +124,6 @@ extern json_spirit::Value dropminerkeys(const json_spirit::Array& params, bool f
 extern json_spirit::Value setgenerate(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value gethashespersec(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getmininginfo(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value getwork(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value getblocktemplate(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value submitblock(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getminedblocks(const json_spirit::Array& params, bool fHelp);
 
@@ -148,19 +146,10 @@ extern json_spirit::Value getblockchaininfo(const json_spirit::Array& params, bo
 extern json_spirit::Value getnetworkinfo(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value signmessage(const json_spirit::Array& params, bool fHelp);
-// extern json_spirit::Value (const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getcontractassets(const json_spirit:: Array& params, bool fHelp);
-extern json_spirit::Value sendtoaddress(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value sendtoaddresswithmemo(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value sendtoaddresswithfee(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value send(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submitsendtx(const json_spirit::Array& params, bool fHelp);
 
-extern json_spirit::Value gensendtoaddressraw    (const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value genregisteraccountraw  (const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value genregistercontractraw (const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value gencallcontractraw     (const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value genvotedelegateraw     (const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value genmulsigtx            (const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value genmulsigtx(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value sendtxraw(const json_spirit::Array& params, bool fHelp);
 
@@ -185,7 +174,7 @@ extern json_spirit::Value startcontracttpstest(const json_spirit::Array& params,
 extern json_spirit::Value getblockfailures(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value submitpricefeedtx(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value submitstakefcointx(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submitfcoinstaketx(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value submitdexbuylimitordertx(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value submitdexselllimitordertx(const json_spirit::Array& params, bool fHelp);
@@ -197,9 +186,9 @@ extern json_spirit::Value getdexorder(const json_spirit::Array& params, bool fHe
 extern json_spirit::Value getdexsysorders(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getdexorders(const json_spirit::Array& params, bool fHelp);
 
-extern json_spirit::Value submitstakecdptx(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value submitredeemcdptx(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value submitliquidatecdptx(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submitcdpstaketx(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submitcdpredeemtx(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submitcdpliquidatetx(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getscoininfo(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getcdp(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getusercdp(const json_spirit::Array& params, bool fHelp);

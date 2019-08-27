@@ -6,11 +6,10 @@
 |---|---|---|---|
 | addnode | ```<node><add/remove/onetry>```| Attempts add or remove ```<node>``` from the addnode list or try a connection to ```<node>``` once.| N |
 | backupwallet | ```<destination>``` | Safely copies wallet.dat to a target directory. | N |
-| callcontracttx | ```<sendaddress><appid><arguments><amount><fee>[height, default = the tip block height]``` | create contract invoke transaction | Y |
+| submitcontractcalltx | ```<sendaddress><appid><arguments><amount><fee>[height, default = the tip block height]``` | create contract invoke transaction | Y |
 | dropminerkeys | | drop miner key from wallet to become a cool miner| Y |
 | dumpwallet | ```<filename>``` | Dumps all wallet keys in a human-readable format.And write to ```<filename>``` | Y |
 | dumpprivkey | ```<wiccaddress>``` | Reveals the private key corresponding to ```<wiccaddress>``` | Y |
-| gencallcontractraw | ```<sendaddress><appid><arguments><amount><fee>[height, default = the tip block height]``` | create raw contract invoke transaction | Y |
 | encryptwallet | ```<passphrase>``` | Encrypts the wallet with ```<passphrase>``` | N |
 | generateblock | ```<address>``` | create a block with the appointed address | N |
 | getaccountinfo | ```<address>``` | Returns the account information  with the given address | N |
@@ -44,14 +43,9 @@
 | listtx | | get all confirmed transactions and all unconfirmed transactions from wallet | N |
 | listtxcache | | get all transactions in cache | N |
 | listunconfirmedtx | | get the list of unconfirmed tx | N |
-| registeraccounttx | ```<address> [fee]``` | register an account from the local wallet node | Y |
-| genregisteraccountraw | ```<height><fee><publickey>[minerpublickey]``` | create a register account raw transaction | N |
+| submitaccountregistertx | ```<address> [fee]``` | register an account from the local wallet node | Y |
 | reconsiderblock | ```<hash>``` | Removes invalidity status of a block and its descendants, reconsider them for activation. | N |
-| deploycontracttx | ```<address><filepath><fee>[height][contract_description]``` | register a contract app | Y |
-| genregistercontractraw | ```<height><fee><address><flag><contract or contract RegId><contract description>``` | get Contract Registration Tx Raw: <br>1.    Height(numeric required) :valod height<br> 2.    Fee: (numeric required) pay to miner<br>3.    address: (string required)for send<br>4.    flag: (numeric, required) 0-1<br>5.    app or appregid: (string required), if flag=0 is script's file path, else if flag=1 scriptid<br>6.    script description:(string optional) new script description.<br>| N |
-| sendtoaddress | ```[wiccaddress]<[recvaddress><amount>``` | Send an amount to a given address. The amount is a real and is rounded to the nearest 0.00000001. Returns the transaction ID <txid> if successful | Y |
-| gensendtoaddressraw | ```<sendaddress><recvaddress><amount><fee><height>``` | generate a signed raw tx with sendaddress, recvaddress, amount, fee, height | N |
-| sendtoaddresswithfee | [sendaddress] <recvaddress> <amount> <fee> | Send an amount to a given address with fee. The amount is a real and is rounded to the nearest 0.00000001 (Sendaddress is optional) | Y |
+| submitcontractdeploytx | ```<address><filepath><fee>[height][contract_description]``` | register a contract app | Y |
 | setgenerate | ```<generate>``` [genblocklimit] | <generate> is true or false to turn generation on or off. Generation is limited to [genblocklimit] processors, -1 is unlimited. | N |
 | settxfee | ```<amount>``` | ```<amount>``` is a real and is rounded to the nearest 0.00000001 | N |
 | signmessage | ```<wiccaddress> <message>``` | Sign a message with the private key of an address. | Y |
