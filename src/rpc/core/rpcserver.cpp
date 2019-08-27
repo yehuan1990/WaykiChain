@@ -208,7 +208,6 @@ Value stop(const Array& params, bool fHelp) {
 //
 // Call Table
 //
-extern Value dropminerkeys(const Array& params, bool fHelp);
 
 static const CRPCCommand vRPCCommands[] =
 { //  name                      actor (function)         okSafeMode threadSafe reqWallet
@@ -232,11 +231,8 @@ static const CRPCCommand vRPCCommands[] =
 
     /* Block chain and UTXO */
     { "getblockchaininfo",      &getblockchaininfo,      true,      false,      false },
-    { "getbestblockhash",       &getbestblockhash,       true,      false,      false },
     { "getblockcount",          &getblockcount,          true,      true,       false },
     { "getblock",               &getblock,               false,     false,      false },
-    { "getblockhash",           &getblockhash,           false,     false,      false },
-    { "getdifficulty",          &getdifficulty,          true,      false,      false },
     { "getrawmempool",          &getrawmempool,          true,      false,      false },
     { "verifychain",            &verifychain,            true,      false,      false },
 
@@ -496,6 +492,9 @@ void JSONRequest::parse(const Value& valRequest) {
 
     if (valMethod.type() != str_type)
         throw JSONRPCError(RPC_INVALID_REQUEST, "Method must be a string");
+
+    strMethod = valMethod.get_str();
+    LogPrint("rpc", "ThreadRPCServer method=%s\n", strMethod);
 
     // Parse params
     Value valParams = find_value(request, "params");
