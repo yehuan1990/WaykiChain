@@ -11,13 +11,17 @@
 #include <unordered_map>
 #include "commons/uint256.h"
 #include <string>
+#include "sync.h"
+#include "persistence/block.h"
 
-class CBlock ;
+using namespace std ;
+
+static CCriticalSection cs_forkpool;
 
 class CForkPool {
 
 private:
-    CCriticalSection cs_forkpool;
+
 public:
 
     unordered_map<uint256,CBlock,CUint256Hasher> blocks ;

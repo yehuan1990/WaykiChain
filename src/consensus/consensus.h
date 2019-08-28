@@ -10,15 +10,31 @@
 #include <consensus/forkpool.h>
 #include <persistence/block.h>
 #include <vector>
-#include <main.h>
 
-extern CCacheDBManager *pCdMan;
 
-CForkPool forkPool ;
+extern CCacheDBManager *pCdMan ;
 
-CBlock currentIrreversibleTop ;
+extern CChain chainActive ;
+extern bool ReadBlockFromDisk(const CBlockIndex *pIndex, CBlock &block) ;
+extern CForkPool forkPool ;
 
-string GetMinerAccountFromBlock(CBlock block){
+extern CBlock currentIrreversibleTop;
+
+
+static CBlock GetTipBlock(){
+
+    if(currentIrreversibleTop.GetTime() == 0 ){
+        auto idx = chainActive.Tip() ;
+        ReadBlockFromDisk(idx, currentIrreversibleTop) ;
+    }
+
+
+    return currentIrreversibleTop ;
+}
+
+
+
+static string GetMinerAccountFromBlock(CBlock block){
 
     auto spCW = std::make_shared<CCacheWrapper>(pCdMan);
     CAccount minerAccount ;
@@ -30,13 +46,13 @@ string GetMinerAccountFromBlock(CBlock block){
 }
 
 
-bool BlockCompare(CBlock a, CBlock b ){
+static bool BlockCompare(CBlock a, CBlock b ){
 
     return a.GetBlockTime() < b.GetBlockTime() ;
 
 }
 
-bool BlockInVector(const CBlock block, const vector<CBlock> blocks){
+static bool BlockInVector(const CBlock block, const vector<CBlock> blocks){
 
     for(auto b: blocks){
         if(b.GetHash() == block.GetHash())
@@ -48,7 +64,7 @@ bool BlockInVector(const CBlock block, const vector<CBlock> blocks){
 
 
 //find all top block in forkpool
-bool GetAllReversibleTop(vector<CBlock>& tops){
+static bool GetAllReversibleTop(vector<CBlock>& tops){
 
     for(auto blockPair: forkPool.blocks){
         bool  isTop = true ;
@@ -68,7 +84,7 @@ bool GetAllReversibleTop(vector<CBlock>& tops){
 }
 
 
-bool GetAllOrphanTop(const vector<CBlock> allTops, vector<CBlock> &orphanTops ){
+static bool GetAllOrphanTop(const vector<CBlock> allTops, vector<CBlock> &orphanTops ){
 
     for (auto top : allTops) {
         CBlock block = top;
@@ -85,12 +101,12 @@ bool GetAllOrphanTop(const vector<CBlock> allTops, vector<CBlock> &orphanTops ){
 }
 
 
-vector<CBlock> GetLongestTop( const vector<CBlock> longtestTops ){
+static vector<CBlock> GetLongestTop( const vector<CBlock> longtestTops ){
 
     vector<CBlock> newLongestTops  ;
 
     unsigned int sameCount = 0 ;
-    for(const auto block: longtestTops){
+    for( auto block: longtestTops){
         vector<CBlock> tempBlocks;
         for(auto iter = forkPool.blocks.begin(); iter!=forkPool.blocks.end(); iter++){
             if(iter->second.GetPrevBlockHash() == block.GetHash()){
@@ -98,8 +114,8 @@ vector<CBlock> GetLongestTop( const vector<CBlock> longtestTops ){
             }
         }
 
-        if(!tempBlocks.empty()){
-            for(const auto &blk: tempBlocks)
+        if(tempBlocks.size() >0){
+            for(auto blk: tempBlocks)
                 newLongestTops.push_back(blk) ;
 
         }else{
@@ -109,14 +125,14 @@ vector<CBlock> GetLongestTop( const vector<CBlock> longtestTops ){
 
     }
 
-    if(sameCount == longtestTops.size() || newLongestTops[0].GetHeight()- currentIrreversibleTop.GetHeight() > 500)
+    if(sameCount == longtestTops.size()/* || newLongestTops[0].GetHeight()- chainActive.Tip()->height > 500*/)
         return newLongestTops;
     else
         return GetLongestTop(newLongestTops);
 
 }
 
-vector<CBlock> FindAllMaxHeightBlocks(){
+static vector<CBlock> FindAllMaxHeightBlocks(){
 
 
     uint32_t maxHeight = 0 ;
@@ -140,11 +156,18 @@ vector<CBlock> FindAllMaxHeightBlocks(){
 }
 
 
-CBlock DeterminePreBlock(){
+static CBlock DeterminePreBlock(const int origin){
+
+    LogPrint("INFO", "FORKPOOL SIZE ==%d", forkPool.blocks.size())
 
     vector<CBlock> vFixTop ;
-    vFixTop.push_back(currentIrreversibleTop) ;
+    CBlock block ;
+
+    vFixTop.push_back(GetTipBlock()) ;
     vector<CBlock> vLongestTop = GetLongestTop(vFixTop) ;
+
+
+/*
 
     vector<CBlock> maxHeightBlocks = FindAllMaxHeightBlocks() ;
     if(maxHeightBlocks.empty()){
@@ -158,13 +181,17 @@ CBlock DeterminePreBlock(){
         if(BlockInVector(block, vLongestTop))
             return block ;
     }
+*/
 
     std:: sort(vLongestTop.begin(), vLongestTop.end(), BlockCompare) ;
-    return vLongestTop[0];
+    auto result =  vLongestTop[0];
 
+    LogPrint("INFO", "detearminePreResult info,origin =%d ,HEIGHT=%d, hash =%s, preHash = %s \n", origin, result.GetHeight(),result.GetHash().GetHex(), result.GetPrevBlockHash().GetHex() )
+
+    return result ;
 }
 
-vector<CBlock> DetermineIrreversibleList( CBlock preBlock){
+static vector<CBlock> DetermineIrreversibleList( CBlock preBlock){
 
 
     vector<CBlock> newIrreversibleBlocks  ;
@@ -188,15 +215,24 @@ vector<CBlock> DetermineIrreversibleList( CBlock preBlock){
     return newIrreversibleBlocks ;
 }
 
-vector<CBlock> DetermineIrreversibleList(){
+static vector<CBlock> DetermineIrreversibleList(){
 
-    return DetermineIrreversibleList( DeterminePreBlock()) ;
+    return DetermineIrreversibleList( DeterminePreBlock(1)) ;
 }
 
+static CBlockIndex* preBlockIndex(int origin){
+  /*  if(forkPool.blocks.size() == 0 )
+        return chainActive.Tip() ;*/
+    CBlock preb = DeterminePreBlock(origin) ;
+    CBlockIndex* idx =  new CBlockIndex(preb) ;
+    auto hash = preb.GetHash() ;
+    const uint256* pHash = &hash ;
 
-CBlockIndex* preBlockIndex(){
-    CBlock preb = DeterminePreBlock() ;
-    return new CBlockIndex(preb) ;
+    idx->pBlockHash = pHash ;
+    idx->height = preb.GetHeight() ;
+
+    LogPrint("INFO", "findPreBlock:  height=%d", preb.GetHeight()) ;
+    return idx ;
 }
 
 

@@ -5,6 +5,7 @@
 
 #include "forkpool.h"
 #include "persistence/block.h"
+#include <unordered_map>
 
 bool CForkPool::AddBlock(CBlock &block) {
 
@@ -22,11 +23,13 @@ bool CForkPool::RemoveBlock(CBlock &block) {
 bool CForkPool::RemoveUnderHeight(const uint32_t height) {
 
     LOCK(cs_forkpool) ;
-
-    for(auto iter = blocks.begin() ; iter != blocks.end(); iter++){
+    auto iter = blocks.begin() ;
+    while(iter != blocks.end()){
         CBlock blk = iter->second ;
         if(blk.GetHeight() <= height){
             iter = blocks.erase(iter) ;
+        }else{
+            iter++ ;
         }
     }
 

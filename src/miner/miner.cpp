@@ -132,8 +132,10 @@ static bool GetCurrentDelegate(const int64_t currentTime, const int32_t currHeig
 bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CAccountDBCache &accountCache,
                          CBlock *pBlock) {
     CBlock previousBlock;
+
     CBlockIndex *pBlockIndex = mapBlockIndex[pBlock->GetPrevBlockHash()];
-    if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
+
+   /* if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
         if (!ReadBlockFromDisk(pBlockIndex, previousBlock))
             return ERRORMSG("read block info fail from disk");
 
@@ -147,7 +149,7 @@ bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CA
                 return ERRORMSG("one delegate can't produce more than one block at the same slot");
         }
     }
-
+*/
     if (pBlock->vptx[0]->nTxType == BLOCK_REWARD_TX) {
         auto pRewardTx          = (CBlockRewardTx *)pBlock->vptx[0].get();
         pRewardTx->txUid        = delegate.regid;
@@ -326,7 +328,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
 
 
-        CBlockIndex *pIndexPrev = preBlockIndex();
+        CBlockIndex *pIndexPrev = preBlockIndex(8);
         int32_t height          = pIndexPrev->height + 1;
         int32_t index           = 0; // block reward tx
         uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
@@ -425,7 +427,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         ((CBlockRewardTx *)pBlock->vptx[0].get())->reward = reward;
 
         // Fill in header
-        pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
+        pBlock->SetPrevBlockHash(DeterminePreBlock(4).GetHash());
         pBlock->SetNonce(0);
         pBlock->SetHeight(height);
         pBlock->SetFuel(totalFuel);
@@ -457,7 +459,7 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock() {
         // Fill in header
 
 
-        CBlockIndex *pIndexPrev            = preBlockIndex() ;
+        CBlockIndex *pIndexPrev            = preBlockIndex(10) ;
         uint32_t height = pIndexPrev->height + 1 ;
         uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
 
@@ -501,7 +503,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
     {
         LOCK2(cs_main, mempool.cs);
 
-        CBlockIndex *pIndexPrev            = preBlockIndex();
+        CBlockIndex *pIndexPrev            = preBlockIndex(9);
         int32_t height                     = pIndexPrev->height + 1;
         int32_t index                      = 1; // 0: block reward tx; 1: median price tx
         uint32_t fuelRate                  = GetElementForBurn(pIndexPrev);
@@ -639,7 +641,7 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet) {
     // Found a solution
     {
         LOCK(cs_main);
-        if (pBlock->GetPrevBlockHash() != preBlockIndex()->GetBlockHash())
+        if (pBlock->GetPrevBlockHash() != preBlockIndex(6)->GetBlockHash())
             return ERRORMSG("CheckWork() : generated block is stale");
 
         // Process this block the same as if we received it from another node
@@ -663,7 +665,7 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         if (vNodes.empty() && SysCfg().NetworkID() != REGTEST_NET)
             return false;
 
-        if (preBlock.GetHash() != DeterminePreBlock().GetHash())
+        if (preBlock.GetHash() != DeterminePreBlock(5).GetHash())
             return false;
 
         // Take a sleep and check.
@@ -703,7 +705,7 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         int64_t lastTime;
         {
             LOCK2(cs_main, pWalletMain->cs_wallet);
-            if (uint32_t(chainActive.Height() + 1) != pBlock->GetHeight())
+            if (uint32_t( DeterminePreBlock(100).GetHeight()+ 1) != pBlock->GetHeight())
                 return false;
 
             CKey acctKey;
@@ -714,8 +716,10 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
                 LogPrint("MINER", "MineBlock() : %s to create block reward transaction, used %d ms, miner address %s\n",
                          success ? "succeed" : "failed", GetTimeMillis() - lastTime,
                          minerAcct.keyid.ToAddress());
+
             }
         }
+
 
         if (success) {
             SetThreadPriority(THREAD_PRIORITY_NORMAL);
@@ -787,7 +791,7 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
                 // Busy-wait for the network to come online so we don't waste time mining
                 // on an obsolete chain. In regtest mode we expect to fly solo.
 
-                CBlockIndex* preBlock = preBlockIndex() ;
+                CBlockIndex* preBlock = preBlockIndex(7) ;
                 while (vNodes.empty() || (preBlock && preBlock->height > 1 &&
                                           GetAdjustedTime() - preBlock->nTime > 60 * 60 &&
                                           !SysCfg().GetBoolArg("-genblockforce", false))) {
@@ -803,17 +807,18 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             int64_t lastTime        = GetTimeMillis();
             uint32_t txUpdated      = mempool.GetUpdatedTransactionNum();
 
-            CBlock preBlock = DeterminePreBlock() ;
+            CBlock preBlock = DeterminePreBlock(3) ;
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = chainActive.Height() + 1;
 
 
             auto spCW   = std::make_shared<CCacheWrapper>(pCdMan);
-            auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
+           /* auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
                               ? CreateStableCoinGenesisBlock()  // stable coin genesis
                               : (GetFeatureForkVersion(blockHeight) == MAJOR_VER_R1)
                                     ? CreateNewBlockPreStableCoinRelease(*spCW) // pre-stable coin release
-                                    : CreateNewBlockStableCoinRelease(*spCW);   // stable coin release
+                                    : CreateNewBlockStableCoinRelease(*spCW);   // stable coin release*/
+           auto pBlock = CreateNewBlockPreStableCoinRelease(*spCW) ;
 
             if (!pBlock.get()) {
                 throw runtime_error("CoinMiner() : failed to create new block");

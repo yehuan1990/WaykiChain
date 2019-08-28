@@ -57,6 +57,8 @@ map<uint256, std::shared_ptr<CCacheWrapper> > mapForkCache;
 CSignatureCache signatureCache;
 CChain chainActive;
 CChain chainMostWork;
+CForkPool forkPool ;
+CBlock currentIrreversibleTop;
 
 /** Fees smaller than this (in sawi) are considered zero fee (for transaction creation) */
 uint64_t CBaseTx::nMinTxFee = 10000;  // Override with -mintxfee
@@ -2174,6 +2176,23 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
     return true ;
 
 }
+
+
+bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
+
+
+    auto irreversibleList = DetermineIrreversibleList() ;
+    for( auto irrBlock: irreversibleList){
+
+        uint256 hash = irrBlock.GetHash();
+
+        persistBlock(irrBlock,state, dbp);
+        forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
+        currentIrreversibleTop = irrBlock ;
+    }
+    return true ;
+}
+
 bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     AssertLockHeld(cs_main);
 
@@ -2193,12 +2212,14 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     CBlockIndex *pBlockIndexPrev = nullptr;
     int32_t height = 0;
     if (block.GetHeight() != 0 || blockHash != SysCfg().GetGenesisBlockHash()) {
-        map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.find(block.GetPrevBlockHash());
+/*        map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.find(block.GetPrevBlockHash());
         if (mi == mapBlockIndex.end())
             return state.DoS(10, ERRORMSG("AcceptBlock() : prev block not found"), 0, "bad-prevblk");
 
         pBlockIndexPrev = (*mi).second;
-        height          = pBlockIndexPrev->height + 1;
+        height          = pBlockIndexPrev->height + 1;*/
+
+        height = int32_t(DeterminePreBlock(99).GetHeight()+1) ;
 
         if (block.GetHeight() != (uint32_t)height) {
             return state.DoS(100, ERRORMSG("AcceptBlock() : height given in block mismatches with its actual height"),
@@ -2208,11 +2229,11 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         int64_t beginTime = GetTimeMillis();
 
         // Check timestamp against prev
-        if (block.GetBlockTime() <= pBlockIndexPrev->GetBlockTime() ||
+      /*  if (block.GetBlockTime() <= pBlockIndexPrev->GetBlockTime() ||
             (block.GetBlockTime() - pBlockIndexPrev->GetBlockTime()) < GetBlockInterval(block.GetHeight())) {
             return state.Invalid(ERRORMSG("AcceptBlock() : the new block came in too early"),
                                  REJECT_INVALID, "time-too-early");
-        }
+        }*/
 /*
 
         // Process forked branch
@@ -2223,18 +2244,19 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 */
 
         // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has been upgraded:
-        if (block.GetVersion() < 2) {
+        /*if (block.GetVersion() < 2) {
             if ((!TestNet() && CBlockIndex::IsSuperMajority(2, pBlockIndexPrev, 950, 1000)) ||
                 (TestNet() && CBlockIndex::IsSuperMajority(2, pBlockIndexPrev, 75, 100))) {
                 return state.Invalid(ERRORMSG("AcceptBlock() : rejected nVersion=1 block"), REJECT_OBSOLETE, "bad-version");
             }
-        }
+        }*/
     }
 
 
     //add to fork pool
     forkPool.AddBlock(block) ;
 
+    ThreadProcessConsensus(state, dbp) ;
 
     // Relay inventory, but don't relay old inventory during initial block download
     //if (chainActive.Tip()->GetBlockHash() == blockHash) {
@@ -2248,20 +2270,6 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     return true;
 }
 
-bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
-
-    while(true){
-        auto irreversibleList = DetermineIrreversibleList() ;
-        for( auto irrBlock: irreversibleList){
-            persistBlock(irrBlock,state, dbp) ;
-            forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
-            currentIrreversibleTop = irrBlock ;
-        }
-        ::MilliSleep(1000) ;
-    }
-
-
-}
 bool CBlockIndex::IsSuperMajority(int32_t minVersion, const CBlockIndex *pstart, uint32_t nRequired, uint32_t nToCheck) {
     uint32_t nFound = 0;
     for (uint32_t i = 0; i < nToCheck && nFound < nRequired && pstart != nullptr; i++) {
@@ -3591,8 +3599,8 @@ bool IsInitialBlockDownload() {
     static int64_t nLastUpdate;
     static CBlockIndex *pIndexLastBest;
 
-    if (preBlockIndex() != pIndexLastBest) {
-        pIndexLastBest = preBlockIndex() ;
+    if (chainActive.Tip() != pIndexLastBest) {
+        pIndexLastBest = chainActive.Tip() ;
         nLastUpdate    = GetTime();
     }
 
