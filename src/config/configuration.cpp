@@ -348,4 +348,4 @@ uint32_t G_CONFIG_TABLE::nFeatureForkHeight_regNet  = 10;
 // Block height for stable coin genesis
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_mainNet = 5880000;
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_testNet = 588000;
-uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_regNet  = 8;
+uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_regNet  = 5000000;

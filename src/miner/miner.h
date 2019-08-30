@@ -83,6 +83,8 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet);
 /** Get burn element */
 uint32_t GetElementForBurn(CBlockIndex *pIndex);
 
+uint32_t GetElementForBurn(CBlock& pBlock);
+
 void GetPriorityTx(vector<TxPriority> &vecPriority, int32_t nFuelRate);
 
 #endif  // COIN_MINER_H

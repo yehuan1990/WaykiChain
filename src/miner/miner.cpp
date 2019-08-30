@@ -58,6 +58,7 @@ uint32_t GetElementForBurn(CBlockIndex *pIndex) {
     for (int32_t i = 0; i < nBlock; ++i) {
         nTotalStep += pTemp->nFuel / pTemp->nFuelRate * 100;
         pTemp = pTemp->pprev;
+
     }
 
     nAverateStep = nTotalStep / nBlock;
@@ -76,6 +77,63 @@ uint32_t GetElementForBurn(CBlockIndex *pIndex) {
     LogPrint("fuel", "preFuelRate=%d fuelRate=%d, height=%d\n", pIndex->nFuelRate, newFuelRate, pIndex->height);
     return newFuelRate;
 }
+
+uint32_t GetElementForBurn(CBlock& block) {
+
+    int32_t nBlock = SysCfg().GetArg("-blocksizeforburn", DEFAULT_BURN_BLOCK_SIZE);
+
+    if (nBlock * 2 >= (int32_t)block.GetHeight()- 1) {
+        return INIT_FUEL_RATES;
+    }
+
+    uint64_t nTotalStep   = 0;
+    uint64_t nAverateStep = 0;
+    uint32_t newFuelRate  = 0;
+    CBlock tempBlock = block ;
+    CBlockIndex* pTemp = nullptr ;
+
+    bool useBlock  = true ;
+
+    for (int32_t i = 0; i < nBlock; ++i) {
+
+
+
+        if(useBlock){
+            nTotalStep += tempBlock.GetFuel() / tempBlock.GetFuelRate() * 100;
+            if(tempBlock.GetHeight() == chainActive.Tip()->height +1 ){
+                pTemp = chainActive.Tip();
+                useBlock = false ;
+            } else{
+                tempBlock = forkPool.blocks[tempBlock.GetPrevBlockHash()] ;
+            }
+
+        } else{
+
+            nTotalStep += pTemp->nFuel / pTemp->nFuelRate * 100;
+            pTemp = pTemp->pprev;
+
+        }
+
+    }
+
+    auto baseRate = block.GetFuelRate();
+    nAverateStep = nTotalStep / nBlock;
+    if (nAverateStep < MAX_BLOCK_RUN_STEP * 0.75) {
+        newFuelRate = baseRate * 0.9;
+    } else if (nAverateStep > MAX_BLOCK_RUN_STEP * 0.85) {
+        newFuelRate = baseRate * 1.1;
+    } else {
+        newFuelRate = baseRate;
+    }
+
+    if (newFuelRate < MIN_FUEL_RATES) {
+        newFuelRate = MIN_FUEL_RATES;
+    }
+
+    LogPrint("fuel", "preFuelRate=%d fuelRate=%d, height=%d\n", baseRate, newFuelRate, block.GetHeight());
+    return newFuelRate;
+}
+
 
 // Sort transactions by priority and fee to decide priority orders to process transactions.
 void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
@@ -131,12 +189,9 @@ static bool GetCurrentDelegate(const int64_t currentTime, const int32_t currHeig
 
 bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CAccountDBCache &accountCache,
                          CBlock *pBlock) {
-    CBlock previousBlock;
-
-    CBlockIndex *pBlockIndex = mapBlockIndex[pBlock->GetPrevBlockHash()];
-
-   /* if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
-        if (!ReadBlockFromDisk(pBlockIndex, previousBlock))
+    CBlock previousBlock ;
+    if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
+        if (!findPreBlock( previousBlock, pBlock->GetPrevBlockHash()))
             return ERRORMSG("read block info fail from disk");
 
         CAccount prevDelegateAcct;
@@ -149,7 +204,7 @@ bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CA
                 return ERRORMSG("one delegate can't produce more than one block at the same slot");
         }
     }
-*/
+
     if (pBlock->vptx[0]->nTxType == BLOCK_REWARD_TX) {
         auto pRewardTx          = (CBlockRewardTx *)pBlock->vptx[0].get();
         pRewardTx->txUid        = delegate.regid;
@@ -222,7 +277,9 @@ bool VerifyPosTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) {
 
     auto spCW = std::make_shared<CCacheWrapper>(cwIn);
 
-    CBlockIndex *pBlockIndex = mapBlockIndex[pBlock->GetPrevBlockHash()];
+    CBlockIndex *pBlockIndex = chainActive.Tip(); /* mapBlockIndex[pBlock->GetPrevBlockHash()];*/
+    assert(pBlockIndex->GetBlockHash() == pBlock->GetPrevBlockHash()) ;
+
     if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
         CBlock previousBlock;
         if (!ReadBlockFromDisk(pBlockIndex, previousBlock))
@@ -328,10 +385,12 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
 
 
-        CBlockIndex *pIndexPrev = preBlockIndex(8);
+
+        CBlock preBlock ;
+        auto pIndexPrev =  preBlockIndex(10,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
         int32_t index           = 0; // block reward tx
-        uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
+        uint32_t fuelRate       = GetElementForBurn(preBlock);
         uint64_t totalBlockSize = ::GetSerializeSize(*pBlock, SER_NETWORK, PROTOCOL_VERSION);
         uint64_t totalRunStep   = 0;
         uint64_t totalFees      = 0;
@@ -432,11 +491,12 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         pBlock->SetHeight(height);
         pBlock->SetFuel(totalFuel);
         pBlock->SetFuelRate(fuelRate);
-        UpdateTime(*pBlock, pIndexPrev);
+        UpdateTime(*pBlock, pIndexPrev.get());
 
         LogPrint("INFO", "CreateNewBlockPreStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%llu\n", height, index + 1,
                  totalBlockSize);
     }
+
 
     return pBlock;
 }
@@ -459,12 +519,12 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock() {
         // Fill in header
 
 
-        CBlockIndex *pIndexPrev            = preBlockIndex(10) ;
-        uint32_t height = pIndexPrev->height + 1 ;
-        uint32_t fuelRate       = GetElementForBurn(pIndexPrev);
-
+        CBlock preBlock ;
+        auto pIndexPrev =  preBlockIndex(10,preBlock) ;
+        int32_t height          = pIndexPrev->height + 1;
+        uint32_t fuelRate       = GetElementForBurn(preBlock);
         pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
-        UpdateTime(*pBlock, pIndexPrev);
+        UpdateTime(*pBlock, pIndexPrev.get());
         pBlock->SetNonce(0);
         pBlock->SetHeight(height);
         pBlock->SetFuel(0);
@@ -503,10 +563,11 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
     {
         LOCK2(cs_main, mempool.cs);
 
-        CBlockIndex *pIndexPrev            = preBlockIndex(9);
-        int32_t height                     = pIndexPrev->height + 1;
-        int32_t index                      = 1; // 0: block reward tx; 1: median price tx
-        uint32_t fuelRate                  = GetElementForBurn(pIndexPrev);
+        CBlock preBlock ;
+        auto pIndexPrev =  preBlockIndex(9,preBlock) ;
+        int32_t height          = pIndexPrev->height + 1;
+        int32_t index           = 1; // block reward tx
+        uint32_t fuelRate       = GetElementForBurn(preBlock);
         uint64_t totalBlockSize            = ::GetSerializeSize(*pBlock, SER_NETWORK, PROTOCOL_VERSION);
         uint64_t totalRunStep              = 0;
         uint64_t totalFees                 = 0;
@@ -623,7 +684,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
         pBlock->SetHeight(height);
         pBlock->SetFuel(totalFuel);
         pBlock->SetFuelRate(fuelRate);
-        UpdateTime(*pBlock, pIndexPrev);
+        UpdateTime(*pBlock, pIndexPrev.get());
 
         LogPrint("INFO", "CreateNewBlockStableCoinRelease() : height=%d, tx=%d, totalBlockSize=%llu\n", height, index + 1,
                  totalBlockSize);
@@ -641,7 +702,7 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet) {
     // Found a solution
     {
         LOCK(cs_main);
-        if (pBlock->GetPrevBlockHash() != preBlockIndex(6)->GetBlockHash())
+        if (pBlock->GetPrevBlockHash() != DeterminePreBlock(6).GetHash())
             return ERRORMSG("CheckWork() : generated block is stale");
 
         // Process this block the same as if we received it from another node

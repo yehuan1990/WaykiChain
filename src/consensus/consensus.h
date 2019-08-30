@@ -23,10 +23,10 @@ extern CBlock currentIrreversibleTop;
 
 static CBlock GetTipBlock(){
 
-    if(currentIrreversibleTop.GetTime() == 0 ){
+    //if(currentIrreversibleTop.GetTime() == 0 ){
         auto idx = chainActive.Tip() ;
         ReadBlockFromDisk(idx, currentIrreversibleTop) ;
-    }
+    //}
 
 
     return currentIrreversibleTop ;
@@ -101,7 +101,7 @@ static bool GetAllOrphanTop(const vector<CBlock> allTops, vector<CBlock> &orphan
 }
 
 
-static vector<CBlock> GetLongestTop( const vector<CBlock> longtestTops ){
+static vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops ){
 
     vector<CBlock> newLongestTops  ;
 
@@ -168,7 +168,6 @@ static CBlock DeterminePreBlock(const int origin){
 
 
 /*
-
     vector<CBlock> maxHeightBlocks = FindAllMaxHeightBlocks() ;
     if(maxHeightBlocks.empty()){
         maxHeightBlocks = vFixTop ;
@@ -182,6 +181,7 @@ static CBlock DeterminePreBlock(const int origin){
             return block ;
     }
 */
+
 
     std:: sort(vLongestTop.begin(), vLongestTop.end(), BlockCompare) ;
     auto result =  vLongestTop[0];
@@ -198,7 +198,7 @@ static vector<CBlock> DetermineIrreversibleList( CBlock preBlock){
     vector<CBlock> tempBlocks  ;
     tempBlocks.push_back(preBlock) ;
 
-
+    forkPool.blocks.erase(chainActive.Tip()->GetBlockHash()) ;
     while(forkPool.blocks.count(tempBlocks.back().GetPrevBlockHash())>0){
         tempBlocks.push_back(forkPool.blocks[tempBlocks.back().GetPrevBlockHash()]) ;
     }
@@ -206,11 +206,12 @@ static vector<CBlock> DetermineIrreversibleList( CBlock preBlock){
     unordered_map<string, int> minerMap ;
     for(const auto &block: tempBlocks){
         if(minerMap.size() >=8){
-            newIrreversibleBlocks.push_back(block) ;
+            newIrreversibleBlocks.insert(newIrreversibleBlocks.begin(),block) ;
         } else{
             minerMap.insert({GetMinerAccountFromBlock(block), 1}) ;
         }
     }
+
 
     return newIrreversibleBlocks ;
 }
@@ -221,8 +222,7 @@ static vector<CBlock> DetermineIrreversibleList(){
 }
 
 static CBlockIndex* preBlockIndex(int origin){
-  /*  if(forkPool.blocks.size() == 0 )
-        return chainActive.Tip() ;*/
+
     CBlock preb = DeterminePreBlock(origin) ;
     CBlockIndex* idx =  new CBlockIndex(preb) ;
     auto hash = preb.GetHash() ;
@@ -235,6 +235,48 @@ static CBlockIndex* preBlockIndex(int origin){
     return idx ;
 }
 
+
+
+static shared_ptr<CBlockIndex> preBlockIndex(int origin, CBlock& preb){
+
+
+    preb = DeterminePreBlock(origin) ;
+    shared_ptr<CBlockIndex> blockIndex =  std::make_shared<CBlockIndex>(preb) ;
+    auto hash = preb.GetHash() ;
+    const uint256* pHash = &hash ;
+
+    blockIndex->pBlockHash = pHash ;
+    blockIndex->height = preb.GetHeight() ;
+
+    LogPrint("INFO", "findPreBlock:  height=%d", preb.GetHeight()) ;
+
+    return blockIndex ;
+}
+
+static bool  findPreBlock(CBlock& block, const uint256 preHash){
+
+    if(preHash == chainActive.Tip()->GetBlockHash()){
+        auto idx = chainActive.Tip() ;
+        ReadBlockFromDisk(idx, block) ;
+        return true ;
+    }
+
+    if(forkPool.HasBlock(preHash)){
+        block = forkPool.blocks[preHash] ;
+        return true ;
+    }
+
+    return false ;
+
+
+}
+
+
+static bool findPreBlock(const uint256 preHash){
+
+    CBlock b;
+    return findPreBlock(b, preHash);
+}
 
 
 #endif

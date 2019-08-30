@@ -1553,7 +1553,7 @@ bool static WriteChainState(CValidationState &state) {
 void static UpdateTip(CBlockIndex *pIndexNew, const CBlock &block) {
     chainActive.SetTip(pIndexNew);
 
-    SyncTransaction(uint256(), nullptr, &block);
+  //  SyncTransaction(uint256(), nullptr, &block);
 
     // Update best block in wallet (so we can detect restored wallets)
     bool fIsInitialDownload = IsInitialBlockDownload();
@@ -1789,9 +1789,11 @@ bool ActivateBestChain(CValidationState &state) {
 bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos &pos) {
     // Check for duplicate
     uint256 hash = block.GetHash();
-    if (mapBlockIndex.count(hash))
-        return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
 
+
+  /*  if (mapBlockIndex.count(hash))
+        return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
+*/
     // Construct new block index object
     CBlockIndex *pIndexNew = new CBlockIndex(block);
     assert(pIndexNew);
@@ -1804,8 +1806,8 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
     pIndexNew->pBlockHash                        = &((*mi).first);
     map<uint256, CBlockIndex *>::iterator miPrev = mapBlockIndex.find(block.GetPrevBlockHash());
     if (miPrev != mapBlockIndex.end()) {
-        pIndexNew->pprev  = (*miPrev).second;
-        pIndexNew->height = pIndexNew->pprev->height + 1;
+        pIndexNew->pprev  = chainActive.Tip();
+     pIndexNew->height = block.GetHeight(); /*pIndexNew->pprev->height + 1;*/
         pIndexNew->BuildSkip();
     }
     pIndexNew->nTx        = block.vptx.size();
@@ -1819,19 +1821,18 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
 
     if (!pCdMan->pBlockTreeDb->WriteBlockIndex(CDiskBlockIndex(pIndexNew)))
         return state.Abort(_("Failed to write block index"));
-    int64_t beginTime = GetTimeMillis();
-    // New best?
-    if (!ActivateBestChain(state)) {
-        LogPrint("INFO", "ActivateBestChain() elapse time:%lld ms\n", GetTimeMillis() - beginTime);
-        return false;
+
+
+    if (!ConnectTip(state, pIndexNew)) {
+        return ERRORMSG("ConnectToChainActive Faild  blockHash==%s\n", pIndexNew->GetBlockHash().GetHex());
     }
-    // LogPrint("INFO", "ActivateBestChain() elapse time:%lld ms\n", GetTimeMillis() - beginTime);
+
     LOCK(cs_main);
-    if (pIndexNew == chainActive.Tip()) {
+/*    if (pIndexNew == chainActive.Tip()) {
         // Clear fork warning if its no longer applicable
         CheckForkWarningConditions();
     } else
-        CheckForkWarningConditionsOnNewFork(pIndexNew);
+        CheckForkWarningConditionsOnNewFork(pIndexNew);*/
 
     if (!pCdMan->pBlockTreeDb->Flush())
         return state.Abort(_("Failed to sync block index"));
@@ -2180,15 +2181,12 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
 
 bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 
-
     auto irreversibleList = DetermineIrreversibleList() ;
     for( auto irrBlock: irreversibleList){
 
-        uint256 hash = irrBlock.GetHash();
-
         persistBlock(irrBlock,state, dbp);
         forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
-        currentIrreversibleTop = irrBlock ;
+
     }
     return true ;
 }
@@ -2202,11 +2200,15 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     if (mapBlockIndex.count(blockHash))
         return state.Invalid(ERRORMSG("AcceptBlock() : block already in mapBlockIndex"), 0, "duplicated");
 
-    assert(block.GetHeight() == 0 || mapBlockIndex.count(block.GetPrevBlockHash()));
+    assert(block.GetHeight() == 0 || block.GetPrevBlockHash() == chainActive.Tip()->GetBlockHash() || forkPool.HasBlock(block.GetPrevBlockHash()));
 
-    if (block.GetHeight() != 0 && block.GetFuelRate() != GetElementForBurn(mapBlockIndex[block.GetPrevBlockHash()]))
-        return state.DoS(100, ERRORMSG("CheckBlock() : block fuel rate unmatched"), REJECT_INVALID,
+    auto calcFuelRate = GetElementForBurn(forkPool.blocks[block.GetPrevBlockHash()]) ;
+    if (block.GetHeight() != 0 && block.GetFuelRate() != calcFuelRate){
+
+        return state.DoS(100, ERRORMSG("CheckBlock() : block fuel rate unmatched, blockhash=%s, fix=%d, calc=%d", block.GetHash().GetHex(),block.GetFuelRate(), calcFuelRate ), REJECT_INVALID,
                          "fuel-rate-unmatched");
+    }
+
 
     // Get prev block index
     CBlockIndex *pBlockIndexPrev = nullptr;
@@ -2219,21 +2221,25 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         pBlockIndexPrev = (*mi).second;
         height          = pBlockIndexPrev->height + 1;*/
 
-        height = int32_t(DeterminePreBlock(99).GetHeight()+1) ;
+        CBlock preBlock ;
+        findPreBlock(preBlock, block.GetPrevBlockHash()) ;
+
+        height = int32_t(preBlock.GetHeight()+1) ;
 
         if (block.GetHeight() != (uint32_t)height) {
             return state.DoS(100, ERRORMSG("AcceptBlock() : height given in block mismatches with its actual height"),
                              REJECT_INVALID, "incorrect-height");
         }
 
+
         int64_t beginTime = GetTimeMillis();
 
         // Check timestamp against prev
-      /*  if (block.GetBlockTime() <= pBlockIndexPrev->GetBlockTime() ||
-            (block.GetBlockTime() - pBlockIndexPrev->GetBlockTime()) < GetBlockInterval(block.GetHeight())) {
+        if (block.GetBlockTime() <= preBlock.GetBlockTime() ||
+            (block.GetBlockTime() - preBlock.GetBlockTime()) < GetBlockInterval(block.GetHeight())) {
             return state.Invalid(ERRORMSG("AcceptBlock() : the new block came in too early"),
                                  REJECT_INVALID, "time-too-early");
-        }*/
+        }
 /*
 
         // Process forked branch
@@ -2425,7 +2431,7 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
     uint256 blockHash = pBlock->GetHash();
 
     // If we don't already have its previous block, shunt it off to holding area until we get it
-    if (!pBlock->GetPrevBlockHash().IsNull() && !mapBlockIndex.count(pBlock->GetPrevBlockHash())) {
+    if (!pBlock->GetPrevBlockHash().IsNull() && !findPreBlock(pBlock->GetPrevBlockHash())) {
         if (pBlock->GetHeight() > (uint32_t)nSyncTipHeight) {
             LogPrint("DEBUG", "blockHeight=%d syncTipHeight=%d\n", pBlock->GetHeight(), nSyncTipHeight );
             nSyncTipHeight = pBlock->GetHeight();
