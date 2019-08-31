@@ -101,7 +101,7 @@ Value submitfcoinstaketx(const Array& params, bool fHelp) {
             "\nArguments:\n"
             "1.\"addr\":             (string, required)\n"
             "2.\"fcoin_amount\":     (numeric, required) amount of fcoins to stake\n"
-            "3. \"symbol:fee:unit\": (string:numeric:string, optional) fee paid to miner, default is WICC:10000:sawi\n"
+            "3.\"symbol:fee:unit\":  (string:numeric:string, optional) fee paid to miner, default is WICC:10000:sawi\n"
             "\nResult:\n"
             "\"txid\"                (string) The transaction id.\n"
             "\nExamples:\n"
@@ -112,7 +112,7 @@ Value submitfcoinstaketx(const Array& params, bool fHelp) {
     }
 
     const CUserID& userId   = RPC_PARAM::GetUserId(params[0]);
-    int64_t stakeAmount     = AmountToRawValue(params[1]);
+    int64_t stakeAmount     = params[1].get_int64();
     ComboMoney cmFee        = RPC_PARAM::GetFee(params, 2, FCOIN_STAKE_TX);
     int32_t validHeight     = chainActive.Height();
     BalanceOpType stakeType = stakeAmount >= 0 ? BalanceOpType::STAKE : BalanceOpType::UNSTAKE;
@@ -191,8 +191,8 @@ Value submitcdpredeemtx(const Array& params, bool fHelp) {
             "\nArguments:\n"
             "1. \"addr\" :              (string, required) CDP redemptor's address\n"
             "2. \"cdp_id\":             (string, required) ID of existing CDP (tx hash of the first CDP Stake Tx)\n"
-            "3. \"repay_amount\":       (numeric, required) scoins (E.g. WUSD) to stake into the CDP, boosted by 10^8\n"
-            "4. \"redeem_amount\":      (numeric, required) bcoins (E.g. WICC) to stake into the CDP, boosted by 10^8\n"
+            "3. \"repay_amount\":       (numeric, required) scoins (E.g. WUSD) to repay into the CDP, boosted by 10^8\n"
+            "4. \"redeem_amount\":      (numeric, required) bcoins (E.g. WICC) to redeem from the CDP, boosted by 10^8\n"
             "5. \"symbol:fee:unit\":    (string:numeric:string, optional) fee paid to miner, default is "
             "WICC:100000:sawi\n"
             "\nResult:\n"
@@ -201,12 +201,12 @@ Value submitcdpredeemtx(const Array& params, bool fHelp) {
             HelpExampleCli("submitcdpredeemtx",
                            "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" "
                            "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\" "
-                           "\"WICC:20000000000:sawi\" \"WUSD:3000000:sawi\" \"WICC:1000000:sawi\"\n") +
+                           "20000000000 40000000000 \"WICC:1000000:sawi\"\n") +
             "\nAs json rpc call\n" +
             HelpExampleRpc("submitcdpredeemtx",
                            "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\", "
                            "\"b850d88bf1bed66d43552dd724c18f10355e9b6657baeae262b3c86a983bee71\", "
-                           "\"WICC:20000000000:sawi\", \"WUSD:3000000:sawi\", \"WICC:1000000:sawi\"\n"));
+                           "20000000000, 40000000000, \"WICC:1000000:sawi\"\n"));
     }
 
     const CUserID& cdpUid   = RPC_PARAM::GetUserId(params[0].get_str());
@@ -269,8 +269,8 @@ Value getscoininfo(const Array& params, bool fHelp){
 
     int32_t height = chainActive.Height();
 
-    uint64_t slideWindowBlockCount = 0;
-    if (!pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount)) {
+    uint64_t slideWindow = 0;
+    if (!pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow)) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Acquire median price slide window blockcount error");
     }
 
@@ -285,11 +285,13 @@ Value getscoininfo(const Array& params, bool fHelp){
     }
 
     map<CoinPricePair, uint64_t> medianPricePoints;
-    if (!pCdMan->pPpCache->GetBlockMedianPricePoints(height, slideWindowBlockCount, medianPricePoints)) {
+    if (!pCdMan->pPpCache->GetBlockMedianPricePoints(height, slideWindow, medianPricePoints)) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Acquire median price error");
     }
 
-    uint64_t bcoinMedianPrice      = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
     uint64_t globalCollateralRatio = pCdMan->pCdpCache->cdpMemCache.GetGlobalCollateralRatio(bcoinMedianPrice);
     bool globalCollateralRatioFloorReached =
         pCdMan->pCdpCache->CheckGlobalCollateralRatioFloorReached(bcoinMedianPrice, globalCollateralRatioFloor);
@@ -321,7 +323,7 @@ Value getscoininfo(const Array& params, bool fHelp){
 
     obj.push_back(Pair("height",                                height));
     obj.push_back(Pair("median_price",                          prices));
-    obj.push_back(Pair("slide_window_block_count",              slideWindowBlockCount));
+    obj.push_back(Pair("slide_window_block_count",              slideWindow));
 
     obj.push_back(Pair("global_staked_bcoins",                  globalStakedBcoins));
     obj.push_back(Pair("global_owed_scoins",                    globalOwedScoins));
@@ -369,9 +371,11 @@ Value getusercdp(const Array& params, bool fHelp){
     assert(!txAccount.regid.IsEmpty());
 
     int32_t height = chainActive.Height();
-    uint64_t slideWindowBlockCount;
-    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    uint64_t slideWindow;
+    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     Array cdps;
     vector<CUserCDP> userCdps;
@@ -402,9 +406,11 @@ Value getcdp(const Array& params, bool fHelp){
     }
 
     int32_t height = chainActive.Height();
-    uint64_t slideWindowBlockCount;
-    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+    uint64_t slideWindow;
+    pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+    // TODO: multi stable coin
+    uint64_t bcoinMedianPrice =
+        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     uint256 cdpTxId(uint256S(params[0].get_str()));
     CUserCDP cdp;

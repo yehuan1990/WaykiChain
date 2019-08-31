@@ -17,14 +17,14 @@ bool CBlockPriceMedianTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidation
  *  force settle/liquidate any under-collateralized CDP (collateral ratio <= 104%)
  */
 bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
-    uint64_t slideWindowBlockCount;
-    if (!cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount)) {
+    uint64_t slideWindow;
+    if (!cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow)) {
         return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::CheckTx, read MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT error"),
                          READ_SYS_PARAM_FAIL, "read-sysparamdb-err");
     }
 
     map<CoinPricePair, uint64_t> mapMedianPricePoints;
-    if (!cw.ppCache.GetBlockMedianPricePoints(height, slideWindowBlockCount, mapMedianPricePoints)) {
+    if (!cw.ppCache.GetBlockMedianPricePoints(height, slideWindow, mapMedianPricePoints)) {
         return state.DoS(100, ERRORMSG("CBlockPriceMedianTx::ExecuteTx, failed to get block median price points"),
                          READ_PRICE_POINT_FAIL, "bad-read-price-points");
     }
@@ -53,13 +53,16 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
     do {
 
         // 0. acquire median prices
-        uint64_t bcoinMedianPrice = cw.ppCache.GetBcoinMedianPrice(height, slideWindowBlockCount);
+        // TODO: multi stable coin
+        uint64_t bcoinMedianPrice =
+            cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
         if (bcoinMedianPrice == 0) {
             LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, failed to acquire bcoin median price\n");
             break;
         }
 
-        uint64_t fcoinMedianPrice = cw.ppCache.GetFcoinMedianPrice(height, slideWindowBlockCount);
+        uint64_t fcoinMedianPrice =
+            cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WGRT, SYMB::USD));
         if (fcoinMedianPrice == 0) {
             LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, failed to acquire fcoin median price\n");
             break;
@@ -106,8 +109,10 @@ bool CBlockPriceMedianTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper
             if (++cdpIndex > kForceSettleCDPMaxCountPerBlock)
                 break;
 
-            LogPrint("CDP", "CBlockPriceMedianTx::ExecuteTx, begin to force settle CDP (%s), currRiskReserveScoins: %llu\n",
-                    cdp.ToString(), currRiskReserveScoins);
+            LogPrint("CDP",
+                     "CBlockPriceMedianTx::ExecuteTx, begin to force settle CDP (%s), currRiskReserveScoins: %llu, "
+                     "index: %u\n",
+                     cdp.ToString(), currRiskReserveScoins, cdpIndex);
 
             // Suppose we have 120 (owed scoins' amount), 30, 50 three cdps, but current risk reserve scoins is 100,
             // then skip the 120 cdp and settle the 30 and 50 cdp.
@@ -205,7 +210,7 @@ string CBlockPriceMedianTx::ToString(CAccountDBCache &accountCache) {
                                  item.second);
     }
 
-    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, valid_height=%d\n",
+    return strprintf("txType=%s, hash=%s, ver=%d, txUid=%s, llFees=%ld, median_price_points=%s, valid_height=%d",
                      GetTxType(nTxType), GetHash().GetHex(), nVersion, txUid.ToString(), llFees, pricePoints,
                      valid_height);
 }

@@ -40,7 +40,7 @@ Value gettxdetail(const Array& params, bool fHelp) {
             "gettxdetail \"txid\"\n"
             "\nget the transaction detail by given transaction hash.\n"
             "\nArguments:\n"
-            "1.txid   (string,required) The hash of transaction.\n"
+            "1.\"txid\":    (string, required) The hash of transaction.\n"
             "\nResult an object of the transaction detail\n"
             "\nResult:\n"
             "\n\"txid\"\n"
@@ -54,17 +54,17 @@ Value gettxdetail(const Array& params, bool fHelp) {
 //create a register account tx
 Value submitaccountregistertx(const Array& params, bool fHelp) {
     if (fHelp || params.size() == 0)
-        throw runtime_error("submitaccountregistertx \"addr\" (\"fee\")\n"
-            "\nregister local account public key to get its RegId\n"
+        throw runtime_error("submitaccountregistertx \"addr\" [\"fee\"]\n"
+            "\nregister account to acquire its regid\n"
             "\nArguments:\n"
-            "1.addr: (string, required)\n"
-            "2.fee: (numeric, optional) pay tx fees to miner\n"
+            "1.\"addr\":    (string, required)\n"
+            "2.\"fee\":     (numeric, optional)\n"
             "\nResult:\n"
-            "\"txid\": (string)\n"
+            "\"txid\":      (string) The transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("submitaccountregistertx", "n2dha9w3bz2HPVQzoGKda3Cgt5p5Tgv6oj 100000 ")
+            + HelpExampleCli("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\" 100000")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitaccountregistertx", "n2dha9w3bz2HPVQzoGKda3Cgt5p5Tgv6oj 100000 "));
+            + HelpExampleRpc("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\", 100000"));
 
     string addr = params[0].get_str();
     uint64_t fee = 0;
@@ -73,7 +73,7 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
         fee = params[1].get_uint64();
         if (fee < nDefaultFee) {
             throw JSONRPCError(RPC_INSUFFICIENT_FEE,
-                               strprintf("Input fee smaller than mintxfee: %ld sawi", nDefaultFee));
+                               strprintf("Input fee smaller than mintxfee: %llu sawi", nDefaultFee));
         }
     } else {
         fee = nDefaultFee;
@@ -107,18 +107,17 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Key not found in local wallet");
 
         CPubKey minerPubKey;
-        if (pWalletMain->GetPubKey(keyId, minerPubKey, true)) {
+        if (pWalletMain->GetPubKey(keyId, minerPubKey, true) && minerPubKey.IsValid()) {
             rtx.minerUid = minerPubKey;
         } else {
-            CNullID nullId;
-            rtx.minerUid = nullId;
+            rtx.minerUid = CNullID();
         }
         rtx.txUid        = pubkey;
         rtx.llFees       = fee;
         rtx.valid_height = chainActive.Height();
 
         if (!pWalletMain->Sign(keyId, rtx.ComputeSignatureHash(), rtx.signature))
-            throw JSONRPCError(RPC_WALLET_ERROR, "in submitaccountregistertx Error: Sign failed.");
+            throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed.");
     }
 
     std::tuple<bool, string> ret;
@@ -134,7 +133,7 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
 Value submitcontractcalltx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 5 || params.size() > 6) {
         throw runtime_error(
-            "submitcontractcalltx \"sender addr\" \"app regid\" \"arguments\" \"amount\" \"fee\" (\"height\")\n"
+            "submitcontractcalltx \"sender addr\" \"app regid\" \"arguments\" \"amount\" \"fee\" [\"height\"]\n"
             "\ncreate contract invocation transaction\n"
             "\nArguments:\n"
             "1.\"sender addr\": (string, required) tx sender's base58 addr\n"
@@ -147,10 +146,10 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
             "\"txid\":          (string)\n"
             "\nExamples:\n" +
             HelpExampleCli("submitcontractcalltx",
-                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\" \"411994-1\" \"01020304\" 10000 10000 100") +
+                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\" \"100-1\" \"01020304\" 10000 10000 100") +
             "\nAs json rpc call\n" +
             HelpExampleRpc("submitcontractcalltx",
-                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\", \"411994-1\", \"01020304\", 10000, 10000, 100"));
+                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\", \"100-1\", \"01020304\", 10000, 10000, 100"));
     }
 
     RPCTypeCheck(params, list_of(str_type)(str_type)(str_type)(int_type)(int_type)(int_type));
@@ -220,22 +219,22 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
 // register a contract app tx
 Value submitcontractdeploytx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 3 || params.size() > 5) {
-        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" (\"height\") (\"appdesc\")\n"
+        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"app_desc\"]\n"
             "\ncreate a transaction of registering a contract app\n"
             "\nArguments:\n"
             "1.\"addr\":        (string, required) contract owner address from this wallet\n"
             "2.\"filepath\":    (string, required) the file path of the app script\n"
             "3.\"fee\":         (numeric, required) pay to miner (the larger the size of script, the bigger fees are required)\n"
             "4.\"height\":      (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
-            "5.\"appdesc\":     (string, optional) new app description\n"
+            "5.\"app_desc\":    (string, optional) new app description\n"
             "\nResult:\n"
             "\"txid\":          (string)\n"
             "\nExamples:\n"
             + HelpExampleCli("submitcontractdeploytx",
-                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 11000000 10000 \"appdesc\"") +
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 11000000 10000 \"app desc\"") +
                 "\nAs json rpc call\n"
             + HelpExampleRpc("submitcontractdeploytx",
-                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 11000000, 10000, \"appdesc\""));
+                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 11000000, 10000, \"app desc\""));
     }
 
     RPCTypeCheck(params, list_of(str_type)(str_type)(int_type)(int_type)(str_type));
@@ -675,10 +674,12 @@ Value getaccountinfo(const Array& params, bool fHelp) {
     }
 
     if (found) {
-        int32_t height                 = chainActive.Height();
-        uint64_t slideWindowBlockCount = 0;
-        pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindowBlockCount);
-        uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetBcoinMedianPrice(height, slideWindowBlockCount);
+        int32_t height       = chainActive.Height();
+        uint64_t slideWindow = 0;
+        pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+        // TODO: multi stable coin
+        uint64_t bcoinMedianPrice =
+            pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
         Array cdps;
         vector<CUserCDP> userCdps;
         if (pCdMan->pCdpCache->GetCDPList(account.regid, userCdps)) {
@@ -843,30 +844,6 @@ Value getcontractinfo(const Array& params, bool fHelp) {
     return obj;
 }
 
-Value generateblock(const Array& params, bool fHelp) {
-    if (fHelp || params.size() != 1) {
-        throw runtime_error("generateblock \"addr\"\n"
-            "\ncreate a block with the appointed address\n"
-            "\nArguments:\n"
-            "1.\"addr\": (string, required)\n"
-            "\nResult:\n"
-            "\nblockhash\n"
-            "\nExamples:\n" +
-            HelpExampleCli("generateblock", "\"5Vp1xpLT8D2FQg3kaaCcjqxfdFNRhxm4oy7GXyBga9\"")
-            + "\nAs json rpc call\n"
-            + HelpExampleRpc("generateblock", "\"5Vp1xpLT8D2FQg3kaaCcjqxfdFNRhxm4oy7GXyBga9\""));
-    }
-    //get keyId
-    CKeyID keyId;
-
-    if (!GetKeyId(params[0].get_str(), keyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "in generateblock :address err");
-
-    Object obj;
-    // obj.push_back(Pair("blockhash", hash.GetHex()));
-    return obj;
-}
-
 Value listtxcache(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0) {
         throw runtime_error("listtxcache\n"
@@ -1008,21 +985,28 @@ Value saveblocktofile(const Array& params, bool fHelp) {
     return "save succeed";
 }
 
-Value sendtxraw(const Array& params, bool fHelp) {
+Value submittxraw(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1) {
         throw runtime_error(
-            "sendtxraw \"transaction\" \n"
-            "\nsend raw transaction\n"
+            "submittxraw \"rawtx\" \n"
+            "\nsubmit raw transaction\n"
             "\nArguments:\n"
-            "1.\"transaction\": (string, required)\n"
-            "\nExamples:\n"
-            + HelpExampleCli("sendtxraw", "\"n2dha9w3bz2HPVQzoGKda3Cgt5p5Tgv6oj\"")
-            + "\nAs json rpc call\n"
-            + HelpExampleRpc("sendtxraw", "\"n2dha9w3bz2HPVQzoGKda3Cgt5p5Tgv6oj\""));
+            "1.\"rawtx\":   (string, required) The raw transaction\n"
+            "\nExamples:\n" +
+            HelpExampleCli("submittxraw",
+                           "\"0b01848908020001145e3550cfae2422dce90a778b0954409b1c6ccc3a045749434382dbea93000457494343c"
+                           "d10004630440220458e2239348a9442d05503137ec84b84d69c7141b3618a88c50c16f76d9655ad02206dd20806"
+                           "87cffad42f7293522568fc36850d4e3b81fa9ad860d1490cf0225cf8\"") +
+            "\nAs json rpc call\n" +
+            HelpExampleRpc("submittxraw",
+                           "\"0b01848908020001145e3550cfae2422dce90a778b0954409b1c6ccc3a045749434382dbea93000457494343c"
+                           "d10004630440220458e2239348a9442d05503137ec84b84d69c7141b3618a88c50c16f76d9655ad02206dd20806"
+                           "87cffad42f7293522568fc36850d4e3b81fa9ad860d1490cf0225cf8\""));
     }
+
     vector<uint8_t> vch(ParseHex(params[0].get_str()));
     if (vch.size() > MAX_RPC_SIG_STR_LEN) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "The rawtx str is too long");
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "The rawtx is too long.");
     }
 
     CDataStream stream(vch, SER_DISK, CLIENT_VERSION);
@@ -1032,7 +1016,7 @@ Value sendtxraw(const Array& params, bool fHelp) {
     std::tuple<bool, string> ret;
     ret = pWalletMain->CommitTx((CBaseTx *) tx.get());
     if (!std::get<0>(ret))
-        throw JSONRPCError(RPC_WALLET_ERROR, "sendtxraw error: " + std::get<1>(ret));
+        throw JSONRPCError(RPC_WALLET_ERROR, "submittxraw error: " + std::get<1>(ret));
 
     Object obj;
     obj.push_back(Pair("txid", std::get<1>(ret)));
@@ -1231,60 +1215,6 @@ Value decodetxraw(const Array& params, bool fHelp) {
     }
     obj = pBaseTx->ToJson(*pCdMan->pAccountCache);
     return obj;
-}
-
-Value getalltxinfo(const Array& params, bool fHelp) {
-    if (fHelp || (params.size() != 0 && params.size() != 1)) {
-        throw runtime_error("getalltxinfo \n"
-            "\nget all transaction info\n"
-            "\nArguments:\n"
-            "1.\"nlimitCount\": (numeric, optional, default=0) 0 return all tx, else return number of nlimitCount txs \n"
-            "\nResult:\n"
-            "\nExamples:\n" + HelpExampleCli("getalltxinfo", "") + "\nAs json rpc call\n"
-            + HelpExampleRpc("getalltxinfo", ""));
-    }
-
-    Object retObj;
-    int32_t nLimitCount(0);
-    if(params.size() == 1)
-        nLimitCount = params[0].get_int();
-    assert(pWalletMain != nullptr);
-    if (nLimitCount <= 0) {
-        Array confirmedTx;
-        for (auto const &wtx : pWalletMain->mapInBlockTx) {
-            for (auto const & item : wtx.second.mapAccountTx) {
-                Object objtx = GetTxDetailJSON(item.first);
-                confirmedTx.push_back(objtx);
-            }
-        }
-        retObj.push_back(Pair("confirmed", confirmedTx));
-
-        Array unconfirmedTx;
-        for (auto const &wtx : pWalletMain->unconfirmedTx) {
-            Object objtx = GetTxDetailJSON(wtx.first);
-            unconfirmedTx.push_back(objtx);
-        }
-        retObj.push_back(Pair("unconfirmed", unconfirmedTx));
-    } else {
-        Array confirmedTx;
-        multimap<int32_t, Object, std::greater<int32_t> > mapTx;
-        for (auto const &wtx : pWalletMain->mapInBlockTx) {
-            for (auto const & item : wtx.second.mapAccountTx) {
-                Object objtx = GetTxDetailJSON(item.first);
-                int32_t nConfHeight = find_value(objtx, "confirmedheight").get_int();
-                mapTx.insert(pair<int32_t, Object>(nConfHeight, objtx));
-            }
-        }
-        int32_t nSize(0);
-        for(auto & txItem : mapTx) {
-            if(++nSize > nLimitCount)
-                break;
-            confirmedTx.push_back(txItem.second);
-        }
-        retObj.push_back(Pair("confirmed", confirmedTx));
-    }
-
-    return retObj;
 }
 
 Value getcontractaccountinfo(const Array& params, bool fHelp) {

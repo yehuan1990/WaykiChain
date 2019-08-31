@@ -118,6 +118,7 @@ extern json_spirit::Value importprivkey(const json_spirit::Array& params, bool f
 extern json_spirit::Value dumpwallet(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value importwallet(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value dropminerkeys(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value dropprivkey(const json_spirit::Array& params, bool fHelp);
 
 //extern json_spirit::Value getgenerate(const json_spirit::Array& params, bool fHelp); // in rpcmining.cpp
 extern json_spirit::Value setgenerate(const json_spirit::Array& params, bool fHelp);
@@ -130,7 +131,6 @@ extern json_spirit::Value getnewaddr(const json_spirit::Array& params, bool fHel
 extern json_spirit::Value getaccount(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value verifymessage(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getcoinunitinfo(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value getbalance(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value addmulsigaddr(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value createmulsig(const json_spirit::Array& params, bool fHelp);
 
@@ -141,7 +141,6 @@ extern json_spirit::Value walletlock(const json_spirit::Array& params, bool fHel
 extern json_spirit::Value encryptwallet(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getinfo(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getwalletinfo(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value getblockchaininfo(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getnetworkinfo(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value signmessage(const json_spirit::Array& params, bool fHelp);
@@ -150,7 +149,7 @@ extern json_spirit::Value submitsendtx(const json_spirit::Array& params, bool fH
 
 extern json_spirit::Value genmulsigtx(const json_spirit::Array& params, bool fHelp);
 
-extern json_spirit::Value sendtxraw(const json_spirit::Array& params, bool fHelp);
+extern json_spirit::Value submittxraw(const json_spirit::Array& params, bool fHelp);
 
 extern json_spirit::Value signtxraw(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value decodetxraw(const json_spirit::Array& params, bool fHelp);
@@ -158,7 +157,6 @@ extern json_spirit::Value decodemulsigscript(const json_spirit::Array& params, b
 
 extern json_spirit::Value getblockcount(const json_spirit::Array& params, bool fHelp); // in rpcblockchain.cpp
 extern json_spirit::Value getdifficulty(const json_spirit::Array& params, bool fHelp);
-extern json_spirit::Value settxfee(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getrawmempool(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value getblock(const json_spirit::Array& params, bool fHelp);
 extern json_spirit::Value verifychain(const json_spirit::Array& params, bool fHelp);
