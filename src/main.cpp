@@ -1790,8 +1790,7 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
     // Check for duplicate
     uint256 hash = block.GetHash();
 
-
-  /*  if (mapBlockIndex.count(hash))
+    /*  if (mapBlockIndex.count(hash))
         return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
 */
     // Construct new block index object
@@ -2202,7 +2201,9 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
     assert(block.GetHeight() == 0 || block.GetPrevBlockHash() == chainActive.Tip()->GetBlockHash() || forkPool.HasBlock(block.GetPrevBlockHash()));
 
-    auto calcFuelRate = GetElementForBurn(forkPool.blocks[block.GetPrevBlockHash()]) ;
+    CBlock preBlock;
+    findPreBlock(preBlock, block.GetPrevBlockHash()) ;
+    auto calcFuelRate = GetElementForBurn(preBlock) ;
     if (block.GetHeight() != 0 && block.GetFuelRate() != calcFuelRate){
 
         return state.DoS(100, ERRORMSG("CheckBlock() : block fuel rate unmatched, blockhash=%s, fix=%d, calc=%d", block.GetHash().GetHex(),block.GetFuelRate(), calcFuelRate ), REJECT_INVALID,
@@ -2223,6 +2224,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
         CBlock preBlock ;
         findPreBlock(preBlock, block.GetPrevBlockHash()) ;
+
 
         height = int32_t(preBlock.GetHeight()+1) ;
 
@@ -2261,6 +2263,11 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
     //add to fork pool
     forkPool.AddBlock(block) ;
+
+    //delete txs of this block from mempool
+    for (auto &pTxItem : block.vptx) {
+        mempool.memPoolTxs.erase(pTxItem->GetHash());
+    }
 
     ThreadProcessConsensus(state, dbp) ;
 

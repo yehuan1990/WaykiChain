@@ -91,12 +91,14 @@ uint32_t GetElementForBurn(CBlock& block) {
     uint32_t newFuelRate  = 0;
     CBlock tempBlock = block ;
     CBlockIndex* pTemp = nullptr ;
-
     bool useBlock  = true ;
+    if(block.GetHash() == chainActive.Tip()->GetBlockHash()){
+        pTemp = chainActive.Tip();
+        useBlock = false ;
+    }
+
 
     for (int32_t i = 0; i < nBlock; ++i) {
-
-
 
         if(useBlock){
             nTotalStep += tempBlock.GetFuel() / tempBlock.GetFuelRate() * 100;
@@ -389,6 +391,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         CBlock preBlock ;
         auto pIndexPrev =  preBlockIndex(10,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
+
         int32_t index           = 0; // block reward tx
         uint32_t fuelRate       = GetElementForBurn(preBlock);
         uint64_t totalBlockSize = ::GetSerializeSize(*pBlock, SER_NETWORK, PROTOCOL_VERSION);
@@ -523,7 +526,7 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock() {
         auto pIndexPrev =  preBlockIndex(10,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
         uint32_t fuelRate       = GetElementForBurn(preBlock);
-        pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
+        pBlock->SetPrevBlockHash(preBlock.GetHash());
         UpdateTime(*pBlock, pIndexPrev.get());
         pBlock->SetNonce(0);
         pBlock->SetHeight(height);
@@ -679,7 +682,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
         pPriceMedianTx->SetMedianPricePoints(mapMedianPricePoints);
 
         // Fill in header
-        pBlock->SetPrevBlockHash(pIndexPrev->GetBlockHash());
+        pBlock->SetPrevBlockHash(preBlock.GetHash());
         pBlock->SetNonce(0);
         pBlock->SetHeight(height);
         pBlock->SetFuel(totalFuel);
@@ -870,16 +873,16 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
 
             CBlock preBlock = DeterminePreBlock(3) ;
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
-            int32_t blockHeight     = chainActive.Height() + 1;
+            int32_t blockHeight     = preBlock.GetHeight()+1 ;
 
 
             auto spCW   = std::make_shared<CCacheWrapper>(pCdMan);
-           /* auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
+            auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
                               ? CreateStableCoinGenesisBlock()  // stable coin genesis
                               : (GetFeatureForkVersion(blockHeight) == MAJOR_VER_R1)
                                     ? CreateNewBlockPreStableCoinRelease(*spCW) // pre-stable coin release
                                     : CreateNewBlockStableCoinRelease(*spCW);   // stable coin release*/
-           auto pBlock = CreateNewBlockPreStableCoinRelease(*spCW) ;
+
 
             if (!pBlock.get()) {
                 throw runtime_error("CoinMiner() : failed to create new block");

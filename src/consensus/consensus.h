@@ -160,6 +160,21 @@ static CBlock DeterminePreBlock(const int origin){
 
     LogPrint("INFO", "FORKPOOL SIZE ==%d", forkPool.blocks.size())
 
+
+    if(origin == 3 || origin ==5){
+        auto block= GetTipBlock();
+        LogPrint("INFO","CHAIN TIP BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINNER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock(block)) ;
+        for(auto iter = forkPool.blocks.begin(); iter != forkPool.blocks.end(); iter++){
+
+
+            block = iter->second ;
+
+            LogPrint("INFO","BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINNER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock(block)) ;
+
+
+        }
+    }
+
     vector<CBlock> vFixTop ;
     CBlock block ;
 
