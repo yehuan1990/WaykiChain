@@ -11,6 +11,7 @@
 #include "commons/util.h"
 #include "main.h"
 #include "net.h"
+#include "consensus/forkpool.h"
 
 #include <string>
 #include <vector>
@@ -25,6 +26,7 @@ class COrphanBlock ;
 extern CChain chainActive ;
 extern uint256 GetOrphanRoot(const uint256 &hash);
 
+extern CForkPool forkPool ;
 
 extern map<uint256, COrphanBlock *> mapOrphanBlocks;
 extern map<uint256, std::shared_ptr<CBaseTx> > mapOrphanTransactions;
@@ -147,12 +149,9 @@ inline void ProcessGetData(CNode *pFrom) {
             it++;
 
             if (inv.type == MSG_BLOCK || inv.type == MSG_FILTERED_BLOCK) {
-                bool send                                = false;
+
                 map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.find(inv.hash);
                 if (mi != mapBlockIndex.end()) {
-                    send = true;
-                }
-                if (send) {
                     // Send block from disk
                     CBlock block;
                     ReadBlockFromDisk((*mi).second, block);
@@ -189,6 +188,41 @@ inline void ProcessGetData(CNode *pFrom) {
                         pFrom->hashContinue.SetNull();
                         LogPrint("net", "reset node hashcontinue\n");
                     }
+                } else if(forkPool.HasBlock(inv.hash)){
+                        CBlock block = forkPool.blocks[inv.hash] ;
+                        if (inv.type == MSG_BLOCK)
+                            pFrom->PushMessage("block", block);
+                        else  // MSG_FILTERED_BLOCK)
+                        {
+                            LOCK(pFrom->cs_filter);
+                            if (pFrom->pfilter) {
+                                CMerkleBlock merkleBlock(block, *pFrom->pfilter);
+                                pFrom->PushMessage("merkleblock", merkleBlock);
+                                // CMerkleBlock just contains hashes, so also push any transactions in the block the client did not see
+                                // This avoids hurting performance by pointlessly requiring a round-trip
+                                // Note that there is currently no way for a node to request any single transactions we didnt send here -
+                                // they must either disconnect and retry or request the full block.
+                                // Thus, the protocol spec specified allows for us to provide duplicate txn here,
+                                // however we MUST always provide at least what the remote peer needs
+                                for (auto &pair : merkleBlock.vMatchedTxn)
+                                    if (!pFrom->setInventoryKnown.count(CInv(MSG_TX, pair.second)))
+                                        pFrom->PushMessage("tx", block.vptx[pair.first]);
+                            }
+                            // else
+                            // no response
+                        }
+
+                        // Trigger them to send a getblocks request for the next batch of inventory
+                        if (inv.hash == pFrom->hashContinue) {
+                            // Bypass PushInventory, this must send even if redundant,
+                            // and we want it right after the last block so they don't
+                            // wait for other stuff first.
+                            vector<CInv> vInv;
+                            vInv.push_back(CInv(MSG_BLOCK, chainActive.Tip()->GetBlockHash()));
+                            pFrom->PushMessage("inv", vInv);
+                            pFrom->hashContinue.SetNull();
+                            LogPrint("net", "reset node hashcontinue\n");
+                        }
                 }
             } else if (inv.IsKnownType()) {
                 // Send stream from relay memory

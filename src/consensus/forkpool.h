@@ -26,6 +26,8 @@ public:
 
     unordered_map<uint256,CBlock,CUint256Hasher> blocks ;
 
+    unordered_map<uint256,int, CUint256Hasher> unCheckedTxHashes ;
+
 public:
 
 

@@ -20,8 +20,6 @@
 #include <boost/circular_buffer.hpp>
 #include "consensus/consensus.h"
 
-                                                                                                   \
-
 
 extern CWallet *pWalletMain;
 extern void SetMinerStatus(bool bStatus);
@@ -409,10 +407,20 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : got %lu transaction(s) sorted by priority rules\n",
                  txPriorities.size());
 
+        auto spCW = std::make_shared<CCacheWrapper>(cwIn) ;
         // Collect transactions into the block.
         for (auto item : txPriorities) {
 
+
+
+
             CBaseTx *pBaseTx = std::get<2>(item).get();
+
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
+                LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : find duplicate tx, txid: %s\n",
+                         pBaseTx->GetHash().GetHex());
+                continue ;
+            }
 
             uint32_t txSize = pBaseTx->GetSerializeSize(SER_NETWORK, PROTOCOL_VERSION);
             if (totalBlockSize + txSize >= nBlockMaxSize) {
@@ -587,6 +595,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
                  txPriorities.size());
 
         auto startTime = std::chrono::steady_clock::now() ;
+        auto spCW = std::make_shared<CCacheWrapper>(cwIn) ;
         // Collect transactions into the block.
         for (auto item : txPriorities) {
             auto endTime    = std::chrono::steady_clock::now();
@@ -596,6 +605,12 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
             }
 
             CBaseTx *pBaseTx = std::get<2>(item).get();
+
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
+                LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : find duplicate tx, txid: %s\n",
+                         pBaseTx->GetHash().GetHex());
+                continue ;
+            }
 
             uint32_t txSize = pBaseTx->GetSerializeSize(SER_NETWORK, PROTOCOL_VERSION);
             if (totalBlockSize + txSize >= nBlockMaxSize) {

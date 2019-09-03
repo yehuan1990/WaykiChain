@@ -1301,9 +1301,18 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
             }
 
             std::shared_ptr<CBaseTx> &pBaseTx = block.vptx[index];
-            if (cw.txCache.HaveTx((pBaseTx->GetHash())))
+            if (cw.txCache.HaveTx((pBaseTx->GetHash()))){
+
+                for (int32_t index = 1; index < (int32_t)block.vptx.size(); ++index) {
+
+
+
+                }
+
                 return state.DoS(100, ERRORMSG("ConnectBlock() : txid=%s duplicated", pBaseTx->GetHash().GetHex()),
-                    REJECT_INVALID, "tx-duplicated");
+                                 REJECT_INVALID, "tx-duplicated");
+            }
+
 
             if (!pBaseTx->IsValidHeight(curHeight, validHeight))
                 return state.DoS(100, ERRORMSG("ConnectBlock() : txid=%s beyond the scope of valid height",
@@ -1553,7 +1562,7 @@ bool static WriteChainState(CValidationState &state) {
 void static UpdateTip(CBlockIndex *pIndexNew, const CBlock &block) {
     chainActive.SetTip(pIndexNew);
 
-  //  SyncTransaction(uint256(), nullptr, &block);
+    SyncTransaction(uint256(), nullptr, &block);
 
     // Update best block in wallet (so we can detect restored wallets)
     bool fIsInitialDownload = IsInitialBlockDownload();
@@ -1790,9 +1799,9 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
     // Check for duplicate
     uint256 hash = block.GetHash();
 
-    /*  if (mapBlockIndex.count(hash))
+    if (mapBlockIndex.count(hash))
         return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
-*/
+
     // Construct new block index object
     CBlockIndex *pIndexNew = new CBlockIndex(block);
     assert(pIndexNew);
@@ -2156,6 +2165,14 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
     uint32_t height = irrBlock.GetHeight() ;
 
     try {
+
+        if(irrBlock.GetPrevBlockHash() != chainActive.Tip() -> GetBlockHash()){
+            return  ERRORMSG("AcceptBlock() : chainActiveTip Error");
+        }
+
+
+
+
         uint32_t nBlockSize = ::GetSerializeSize(irrBlock, SER_DISK, CLIENT_VERSION);
         CDiskBlockPos blockPos;
         if (dbp != nullptr)
@@ -2183,7 +2200,8 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
     auto irreversibleList = DetermineIrreversibleList() ;
     for( auto irrBlock: irreversibleList){
 
-        persistBlock(irrBlock,state, dbp);
+        bool consensusResult = persistBlock(irrBlock,state, dbp);
+
         forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
 
     }
@@ -2252,12 +2270,12 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 */
 
         // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has been upgraded:
-        /*if (block.GetVersion() < 2) {
+        if (block.GetVersion() < 2) {
             if ((!TestNet() && CBlockIndex::IsSuperMajority(2, pBlockIndexPrev, 950, 1000)) ||
                 (TestNet() && CBlockIndex::IsSuperMajority(2, pBlockIndexPrev, 75, 100))) {
                 return state.Invalid(ERRORMSG("AcceptBlock() : rejected nVersion=1 block"), REJECT_OBSOLETE, "bad-version");
             }
-        }*/
+        }
     }
 
 
@@ -2269,16 +2287,20 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         mempool.memPoolTxs.erase(pTxItem->GetHash());
     }
 
-    ThreadProcessConsensus(state, dbp) ;
-
     // Relay inventory, but don't relay old inventory during initial block download
     //if (chainActive.Tip()->GetBlockHash() == blockHash) {
     LOCK(cs_vNodes);
+
     for (auto pNode : vNodes) {
         if (chainActive.Height() > (pNode->nStartingHeight != -1 ? pNode->nStartingHeight - 2000 : 0))
             pNode->PushInventory(CInv(MSG_BLOCK, blockHash));
     }
     //}
+
+
+
+
+    ThreadProcessConsensus(state, dbp) ;
 
     return true;
 }
@@ -2413,6 +2435,17 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
 
     int64_t llBeginCheckBlockTime = GetTimeMillis();
     auto spCW = std::make_shared<CCacheWrapper>(pCdMan);
+
+    if(pBlock->GetHeight() <= chainActive.Tip()->height){
+        return state.Invalid(ERRORMSG("ProcessBlock() : height is irreversible hash:%s, height:%d", blockHash.ToString(), pBlock->GetHeight()), 0, "duplicate");
+    }
+
+    for(auto tx : pBlock->vptx){
+        if(spCW->txCache.HaveTx(tx->GetHash())){
+            return state.DoS(100, ERRORMSG("ConnectBlock() : txid=%s duplicated", tx->GetHash().GetHex()),
+                             REJECT_INVALID, "tx-duplicated");
+        }
+    }
 
     // Preliminary checks
     if (!CheckBlock(*pBlock, state, *spCW, false)) {
