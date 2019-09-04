@@ -956,7 +956,7 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = preBlock.GetHeight()+1 ;
 
-            auto spCW   = std::make_shared<CCacheWrapper>(forkPool.spCW);
+            auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
 
             auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
                               ? CreateStableCoinGenesisBlock()  // stable coin genesis

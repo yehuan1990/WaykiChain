@@ -54,6 +54,7 @@ private:
             else
                 unCheckedTxHashes.insert({tx->GetHash(),unCheckedTxHashes[tx->GetHash()]+1}) ;
         }
+        return true ;
     }
 
 public:

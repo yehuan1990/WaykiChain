@@ -312,6 +312,7 @@ libcoin_common_a_SOURCES = \
   commons/util.cpp \
   crypto/hash.cpp \
   consensus/forkpool.cpp \
+  consensus/consensus.cpp \
   config/chainparams.cpp \
   config/configuration.cpp \
   config/version.cpp \
