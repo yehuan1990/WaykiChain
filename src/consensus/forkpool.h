@@ -16,20 +16,47 @@
 
 using namespace std ;
 
+class CCacheDBManager ;
+class CValidationState ;
+class CCacheWrapper ;
+
 static CCriticalSection cs_forkpool;
+extern CBlock GetTipBlock() ;
+extern CCacheDBManager *pCdMan ;
+
+extern bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) ;
+
+
 
 class CForkPool {
 
 private:
 
+    bool  inited = false ;
 public:
 
     unordered_map<uint256,CBlock,CUint256Hasher> blocks ;
 
     unordered_map<uint256,int, CUint256Hasher> unCheckedTxHashes ;
 
-public:
+    CBlock tipBlock  ;
 
+    shared_ptr<CCacheWrapper> spCW = nullptr ;
+
+
+private:
+
+    bool insertBlock(CBlock& block){
+        blocks.insert({block.GetHash(), block});
+        for( auto tx: block.vptx){
+            if(!unCheckedTxHashes.count(tx->GetHash()))
+                unCheckedTxHashes.insert({tx->GetHash(),1});
+            else
+                unCheckedTxHashes.insert({tx->GetHash(),unCheckedTxHashes[tx->GetHash()]+1}) ;
+        }
+    }
+
+public:
 
 
     bool AddBlock(CBlock& block) ;
@@ -42,6 +69,9 @@ public:
 
     bool GetBlock(const uint256 hash, CBlock& block) ;
 
+    CBlock DeterminePreBlock(const int origin) ;
+
+    vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops );
 };
 
 #endif //WAYKICHAIN_FORKPOOL_H

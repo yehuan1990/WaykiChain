@@ -34,6 +34,7 @@
 #include "consensus/forkpool.h"
 #include "config/chainparams.h"
 
+
 using namespace json_spirit;
 using namespace std;
 using namespace boost;
@@ -661,6 +662,8 @@ arith_uint256 GetBlockProof(const CBlockIndex &block) {
     // or ~bnTarget / (nTarget+1) + 1.
     return (~bnTarget / (bnTarget + 1)) + 1;
 }
+
+
 
 bool fLargeWorkForkFound         = false;
 bool fLargeWorkInvalidChainFound = false;
@@ -2146,9 +2149,6 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
             return  ERRORMSG("AcceptBlock() : chainActiveTip Error");
         }
 
-
-
-
         uint32_t nBlockSize = ::GetSerializeSize(irrBlock, SER_DISK, CLIENT_VERSION);
         CDiskBlockPos blockPos;
         if (dbp != nullptr)
@@ -2171,9 +2171,22 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
 }
 
 
+static bool inProcessConsensus = false;
+CCriticalSection cs_processConsensus;
 bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 
-    auto irreversibleList = DetermineIrreversibleList() ;
+    {
+        LOCK(cs_processConsensus) ;
+        if(inProcessConsensus == false){
+            inProcessConsensus = true;
+        } else{
+            return true ;
+        }
+    }
+
+
+    vector<CBlock> irreversibleList ;
+    DetermineIrreversibleList( DeterminePreBlock(1), irreversibleList) ;
     for( auto irrBlock: irreversibleList){
 
         bool consensusResult = persistBlock(irrBlock,state, dbp);
@@ -2181,6 +2194,7 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
         forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
 
     }
+    inProcessConsensus = false ;
     return true ;
 }
 
@@ -2435,9 +2449,11 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
 }
 
 bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBlockPos *dbp) {
+
+
+
+
     int64_t llBeginTime = GetTimeMillis();
-
-
     //check and validate the new Block
     if(!CheckBlock(state , pFrom, pBlock)){
         return false;
@@ -3627,6 +3643,13 @@ bool IsInitialBlockDownload() {
     }
 
     return (GetTime() - nLastUpdate < SysCfg().GetBlockIntervalPreStableCoinRelease() && chainActive.Tip()->GetBlockTime() < GetTime() - 24 * 60 * 60);
+}
+
+CBlock GetTipBlock(){
+
+    auto idx = chainActive.Tip() ;
+    ReadBlockFromDisk(idx, currentIrreversibleTop) ;
+    return currentIrreversibleTop ;
 }
 
 FILE *OpenDiskFile(const CDiskBlockPos &pos, const char *prefix, bool fReadOnly) {

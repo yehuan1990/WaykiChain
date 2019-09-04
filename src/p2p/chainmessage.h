@@ -15,6 +15,8 @@
 
 #include <string>
 #include <vector>
+#include <ctime>
+#include <cstdlib>
 
 using namespace std ;
 
@@ -712,6 +714,13 @@ inline bool ProcessGetDataMessage(CNode *pFrom, CDataStream &vRecv){
 }
 
 inline void ProcessBlockMessage(CNode *pFrom, CDataStream &vRecv){
+
+   /* srand((int)time(0)) ;
+    if(rand()%100 <2){
+        return;
+    }*/
+
+
     CBlock block;
     vRecv >> block;
 

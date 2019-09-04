@@ -357,6 +357,107 @@ bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) 
     return true;
 }
 
+
+bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
+    uint32_t maxNonce = SysCfg().GetBlockMaxNonce();
+
+    vector<CRegID> delegateList;
+    if (!cwIn.delegateCache.GetTopDelegateList(delegateList))
+        return false;
+
+    ShuffleDelegates(pBlock->GetHeight(), delegateList);
+
+    CRegID regId;
+    if (!GetCurrentDelegate(pBlock->GetTime(), pBlock->GetHeight(), delegateList, regId))
+        return ERRORMSG("VerifyForkPoolBlock() : failed to get current delegate");
+    CAccount curDelegate;
+    if (!cwIn.accountCache.GetAccount(regId, curDelegate))
+        return ERRORMSG("VerifyForkPoolBlock() : failed to get current delegate's account, regId=%s", regId.ToString());
+    if (pBlock->GetNonce() > maxNonce)
+        return ERRORMSG("VerifyForkPoolBlock() : invalid nonce: %u", pBlock->GetNonce());
+
+    if (pBlock->GetMerkleRootHash() != pBlock->BuildMerkleTree())
+        return ERRORMSG("VerifyForkPoolBlock() : wrong merkle root hash");
+
+    auto spCW = std::make_shared<CCacheWrapper>(cwIn);
+
+    if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
+        CBlock previousBlock;
+        if (!findPreBlock(previousBlock, pBlock->GetPrevBlockHash()))
+            return ERRORMSG("VerifyForkPoolBlock() : read block info failed from disk");
+
+        CAccount prevDelegateAcct;
+        if (!spCW->accountCache.GetAccount(previousBlock.vptx[0]->txUid, prevDelegateAcct))
+            return ERRORMSG("VerifyForkPoolBlock() : failed to get previous delegate's account, regId=%s",
+                            previousBlock.vptx[0]->txUid.ToString());
+
+        if (pBlock->GetBlockTime() - previousBlock.GetBlockTime() < GetBlockInterval(pBlock->GetHeight())) {
+            if (prevDelegateAcct.regid == curDelegate.regid)
+                return ERRORMSG("VerifyForkPoolBlock() : one delegate can't produce more than one block at the same slot");
+        }
+    }
+
+    CAccount account;
+    if (spCW->accountCache.GetAccount(pBlock->vptx[0]->txUid, account)) {
+        if (curDelegate.regid != account.regid) {
+            return ERRORMSG("VerifyForkPoolBlock() : delegate should be(%s) vs what we got(%s)", curDelegate.regid.ToString(),
+                            account.regid.ToString());
+        }
+
+        const auto &blockHash      = pBlock->ComputeSignatureHash();
+        const auto &blockSignature = pBlock->GetSignature();
+
+        if (blockSignature.size() == 0 || blockSignature.size() > MAX_SIGNATURE_SIZE) {
+            return ERRORMSG("VerifyForkPoolBlock() : invalid block signature size, hash=%s", blockHash.ToString());
+        }
+
+        if (!VerifySignature(blockHash, blockSignature, account.owner_pubkey))
+            if (!VerifySignature(blockHash, blockSignature, account.miner_pubkey))
+                return ERRORMSG("VerifyForkPoolBlock() : verify signature error");
+    } else {
+        return ERRORMSG("VerifyForkPoolBlock() : failed to get account info, regId=%s", pBlock->vptx[0]->txUid.ToString());
+    }
+
+    if (pBlock->vptx[0]->nVersion != INIT_TX_VERSION)
+        return ERRORMSG("VerifyForkPoolBlock() : transaction version %d vs current %d", pBlock->vptx[0]->nVersion, INIT_TX_VERSION);
+
+    if (true) {
+        uint64_t totalFuel    = 0;
+        uint64_t totalRunStep = 0;
+        for (uint32_t i = 1; i < pBlock->vptx.size(); i++) {
+            shared_ptr<CBaseTx> pBaseTx = pBlock->vptx[i];
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()))
+                return ERRORMSG("VerifyForkPoolBlock() : duplicate transaction, txid=%s", pBaseTx->GetHash().GetHex());
+
+            CValidationState state;
+            if (!pBaseTx->ExecuteTx(pBlock->GetHeight(), i, *spCW, state)) {
+                if (SysCfg().IsLogFailures()) {
+                    pCdMan->pLogCache->SetExecuteFail(pBlock->GetHeight(), pBaseTx->GetHash(), state.GetRejectCode(),
+                                                      state.GetRejectReason());
+                }
+                return ERRORMSG("VerifyForkPoolBlock() : failed to execute transaction, txid=%s", pBaseTx->GetHash().GetHex());
+            }
+
+            totalRunStep += pBaseTx->nRunStep;
+            if (totalRunStep > MAX_BLOCK_RUN_STEP)
+                return ERRORMSG("VerifyForkPoolBlock() : block total run steps(%lu) exceed max run step(%lu)", totalRunStep,
+                                MAX_BLOCK_RUN_STEP);
+
+            totalFuel += pBaseTx->GetFuel(pBlock->GetFuelRate());
+            LogPrint("fuel", "VerifyForkPoolBlock() : total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s\n", totalFuel,
+                     pBaseTx->GetFuel(pBlock->GetFuelRate()), pBaseTx->nRunStep, pBlock->GetFuelRate(),
+                     pBaseTx->GetHash().GetHex());
+        }
+
+        if (totalFuel != pBlock->GetFuel())
+            return ERRORMSG("VerifyForkPoolBlock() : total fuel(%lu) mismatch what(%u) in block header", totalFuel,
+                            pBlock->GetFuel());
+    }
+    spCW->Flush() ;
+
+    return true;
+}
+
 std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) {
     // Create new block
     std::unique_ptr<CBlock> pBlock(new CBlock());
@@ -591,6 +692,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
             }
 
             auto spCW = std::make_shared<CCacheWrapper>(cwIn);
+
 
             try {
                 CValidationState state;
@@ -854,8 +956,8 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = preBlock.GetHeight()+1 ;
 
+            auto spCW   = std::make_shared<CCacheWrapper>(forkPool.spCW);
 
-            auto spCW   = std::make_shared<CCacheWrapper>(pCdMan);
             auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
                               ? CreateStableCoinGenesisBlock()  // stable coin genesis
                               : (GetFeatureForkVersion(blockHeight) == MAJOR_VER_R1)
