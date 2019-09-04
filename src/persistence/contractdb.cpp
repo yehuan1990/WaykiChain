@@ -10,7 +10,7 @@
 #include "entities/key.h"
 #include "commons/uint256.h"
 #include "commons/util.h"
-#include "vm/luavm/vmrunenv.h"
+#include "vm/luavm/luavmrunenv.h"
 
 #include <stdint.h>
 
@@ -147,6 +147,7 @@ bool CContractDBCache::WriteTxIndexes(const vector<pair<uint256, CDiskTxPos> > &
 bool CContractDBCache::SetTxRelAccout(const uint256 &txid, const set<CKeyID> &relAccount) {
     return contractRelatedKidCache.SetData(txid, relAccount);
 }
+
 bool CContractDBCache::GetTxRelAccount(const uint256 &txid, set<CKeyID> &relAccount) {
     return contractRelatedKidCache.GetData(txid, relAccount);
 }

@@ -44,11 +44,6 @@ bool PrintTestNotSetPara() {
         MilliSleep(500);
         exit(0);
     }
-    if (!SysCfg().GetArg("-isdbtraversal", flag)) {
-        cout << "Warning: the test of config file the isdbtraversal param must be true" << endl;
-        MilliSleep(500);
-        exit(0);
-    }
 
     if (!SysCfg().GetArg("-regtest", flag)) {
         cout << "Warning: the test of config file the regtest param must be 1" << endl;
@@ -104,7 +99,7 @@ bool AppInit(int argc, char *argv[], boost::thread_group &threadGroup) {
             exit(ret);
         }
 
-        SysCfg().SoftSetBoolArg("-server", true);
+        SysCfg().SoftSetBoolArg("-rpcserver", true);
 
         fRet = AppInit(threadGroup);
     } catch (std::exception &e) {
