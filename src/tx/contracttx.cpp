@@ -16,29 +16,6 @@
 #include "config/version.h"
 #include "vm/luavm/luavmrunenv.h"
 
-static bool GetKeyId(const CAccountDBCache &accountView, const string &userIdStr, CKeyID &keyid) {
-    switch (userIdStr.size()) {
-        case 6: {   // CRegID
-            CRegID regId(userIdStr);
-            keyid = regId.GetKeyId(accountView);
-            break;
-        }
-        case 34: {  // Base58Addr
-            string addr(userIdStr.begin(), userIdStr.end());
-            keyid = CKeyID(addr);
-            break;
-        }
-        //TODO: support nick ID
-        default:
-            return false;
-    }
-
-    if (keyid.IsEmpty())
-        return false;
-
-    return true;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // class CLuaContractDeployTx
 
@@ -57,7 +34,6 @@ bool CLuaContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
                         llFees, llFuel), REJECT_INVALID, "fee-too-litter-to-afford-fuel");
     }
 
-    // If valid height range changed little enough(i.e. 3 blocks), remove it.
     if (GetFeatureForkVersion(height) == MAJOR_VER_R2) {
         uint64_t slideWindow = 0;
         cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
@@ -228,43 +204,23 @@ bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
 
     LogPrint("vm", "execute contract elapse: %lld, txid=%s\n", GetTimeMillis() - llTime, GetHash().GetHex());
 
-    set<CKeyID> vAddress;
-    CUserID userId;
-    vector<std::shared_ptr<CAccount> > &vAccount = vmRunEnv.GetNewAccount();
+    auto &accounts = vmRunEnv.GetNewAccount();
     // Update accounts' info referred to the contract
-    for (auto &itemAccount : vAccount) {
-        vAddress.insert(itemAccount->keyid);
-        userId = itemAccount->keyid;
-        CAccount oldAcct;
-        if (!cw.accountCache.GetAccount(userId, oldAcct)) {
-            // The contract transfers money to an address for the first time.
-            if (!itemAccount->keyid.IsNull()) {
-                oldAcct.keyid = itemAccount->keyid;
-            } else {
-                return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read account info error"),
-                                 UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
-            }
+    for (auto &account : accounts) {
+        if (account->keyid.IsNull()) {
+            return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read account info error"),
+                             UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
         }
-        if (!cw.accountCache.SetAccount(userId, *itemAccount))
+
+        if (!cw.accountCache.SetAccount(CUserID(account->keyid), *account))
             return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, write account info error"),
                              UPDATE_ACCOUNT_FAIL, "bad-write-accountdb");
     }
 
-    vector<std::shared_ptr<CAppUserAccount> > &vAppUserAccount = vmRunEnv.GetRawAppUserAccount();
-    for (auto & itemUserAccount : vAppUserAccount) {
-        CKeyID itemKeyID;
-        bool bValid = GetKeyId(cw.accountCache, itemUserAccount.get()->GetAccUserId(), itemKeyID);
-        if (bValid) {
-            vAddress.insert(itemKeyID);
-        }
-    }
-
-    if (!cw.contractCache.SetTxRelAccout(GetHash(), vAddress))
-        return ERRORMSG("CLuaContractInvokeTx::ExecuteTx, save tx relate account info to script db error");
-
     if (!cw.txReceiptCache.SetTxReceipts(GetHash(), vmRunEnv.GetReceipts()))
-        return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, set tx receipts failed!! txid=%s",
-                        GetHash().ToString()), REJECT_INVALID, "set-tx-receipt-failed");
+        return state.DoS(
+            100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, set tx receipts failed!! txid=%s", GetHash().ToString()),
+            REJECT_INVALID, "set-tx-receipt-failed");
 
     return true;
 }
@@ -309,7 +265,6 @@ bool CUniversalContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
                         llFees, llFuel), REJECT_INVALID, "fee-too-litter-to-afford-fuel");
     }
 
-    // If valid height range changed little enough(i.e. 3 blocks), remove it.
     if (GetFeatureForkVersion(height) == MAJOR_VER_R2) {
         uint64_t slideWindow = 0;
         cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
@@ -492,43 +447,23 @@ bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCache
 
     LogPrint("vm", "execute contract elapse: %lld, txid=%s\n", GetTimeMillis() - llTime, GetHash().GetHex());
 
-    set<CKeyID> vAddress;
-    CUserID userId;
-    vector<std::shared_ptr<CAccount> > &vAccount = vmRunEnv.GetNewAccount();
+    auto &accounts = vmRunEnv.GetNewAccount();
     // Update accounts' info referred to the contract
-    for (auto &itemAccount : vAccount) {
-        vAddress.insert(itemAccount->keyid);
-        userId = itemAccount->keyid;
-        CAccount oldAcct;
-        if (!cw.accountCache.GetAccount(userId, oldAcct)) {
-            // The contract transfers money to an address for the first time.
-            if (!itemAccount->keyid.IsNull()) {
-                oldAcct.keyid = itemAccount->keyid;
-            } else {
-                return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, read account info error"),
-                                 UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
-            }
+    for (auto &account : accounts) {
+        if (account->keyid.IsNull()) {
+            return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, read account info error"),
+                             UPDATE_ACCOUNT_FAIL, "bad-read-accountdb");
         }
-        if (!cw.accountCache.SetAccount(userId, *itemAccount))
-            return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, write account info error"),
-                UPDATE_ACCOUNT_FAIL, "bad-write-accountdb");
-    }
 
-    vector<std::shared_ptr<CAppUserAccount> > &vAppUserAccount = vmRunEnv.GetRawAppUserAccount();
-    for (auto & itemUserAccount : vAppUserAccount) {
-        CKeyID itemKeyID;
-        bool bValid = GetKeyId(cw.accountCache, itemUserAccount.get()->GetAccUserId(), itemKeyID);
-        if (bValid) {
-            vAddress.insert(itemKeyID);
-        }
+        if (!cw.accountCache.SetAccount(CUserID(account->keyid), *account))
+            return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, write account info error"),
+                             UPDATE_ACCOUNT_FAIL, "bad-write-accountdb");
     }
-
-    if (!cw.contractCache.SetTxRelAccout(GetHash(), vAddress))
-        return ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, save tx relate account info to script db error");
 
     if (!cw.txReceiptCache.SetTxReceipts(GetHash(), vmRunEnv.GetReceipts()))
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, set tx receipts failed!! txid=%s",
                         GetHash().ToString()), REJECT_INVALID, "set-tx-receipt-failed");
+
     return true;
 }
 
