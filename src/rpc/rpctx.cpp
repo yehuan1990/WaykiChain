@@ -219,22 +219,22 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
 // register a contract app tx
 Value submitcontractdeploytx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 3 || params.size() > 5) {
-        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"app_desc\"]\n"
+        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"contract_desc\"]\n"
             "\ncreate a transaction of registering a contract app\n"
             "\nArguments:\n"
-            "1.\"addr\":        (string, required) contract owner address from this wallet\n"
-            "2.\"filepath\":    (string, required) the file path of the app script\n"
-            "3.\"fee\":         (numeric, required) pay to miner (the larger the size of script, the bigger fees are required)\n"
-            "4.\"height\":      (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
-            "5.\"app_desc\":    (string, optional) new app description\n"
+            "1.\"addr\":            (string, required) contract owner address from this wallet\n"
+            "2.\"filepath\":        (string, required) the file path of the app script\n"
+            "3.\"fee\":             (numeric, required) pay to miner (the larger the size of script, the bigger fees are required)\n"
+            "4.\"height\":          (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
+            "5.\"contract_desc\":   (string, optional) contract description\n"
             "\nResult:\n"
-            "\"txid\":          (string)\n"
+            "\"txid\":              (string)\n"
             "\nExamples:\n"
             + HelpExampleCli("submitcontractdeploytx",
-                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 11000000 10000 \"app desc\"") +
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 110000000 10000 \"Hello, WaykiChain!\"") +
                 "\nAs json rpc call\n"
             + HelpExampleRpc("submitcontractdeploytx",
-                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 11000000, 10000, \"app desc\""));
+                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 110000000, 10000, \"Hello, WaykiChain!\""));
     }
 
     RPCTypeCheck(params, list_of(str_type)(str_type)(int_type)(int_type)(str_type));
@@ -538,7 +538,6 @@ if (fHelp || params.size() > 2) {
                 "\nArguments:\n"
                 "1. count          (numeric, optional, default=10) The number of transactions to return\n"
                 "2. from           (numeric, optional, default=0) The number of transactions to skip\n"
-                "\nExamples:\n"
                 "\nResult:\n"
                 "\nExamples:\n"
                 "\nList the most recent 10 transactions in the system\n"
@@ -551,10 +550,11 @@ if (fHelp || params.size() > 2) {
     Object retObj;
     int32_t nDefCount = 10;
     int32_t nFrom = 0;
-    if(params.size() > 0) {
+    if (params.size() > 0) {
         nDefCount = params[0].get_int();
     }
-    if(params.size() > 1) {
+
+    if (params.size() > 1) {
         nFrom = params[1].get_int();
     }
     assert(pWalletMain != nullptr);
@@ -589,6 +589,7 @@ if (fHelp || params.size() > 2) {
     for (auto const &tx : pWalletMain->unconfirmedTx) {
         unconfirmedTxArray.push_back(tx.first.GetHex());
     }
+
     retObj.push_back(Pair("unconfirmed_tx", unconfirmedTxArray));
 
     return retObj;
@@ -691,31 +692,6 @@ Value getaccountinfo(const Array& params, bool fHelp) {
     return obj;
 }
 
-//list unconfirmed transaction of mine
-Value listunconfirmedtx(const Array& params, bool fHelp) {
-    if (fHelp || params.size() != 0) {
-         throw runtime_error("listunconfirmedtx \n"
-                "\nget the list  of unconfirmedtx.\n"
-                "\nArguments:\n"
-                "\nResult:\n"
-                "\nExamples:\n"
-                + HelpExampleCli("listunconfirmedtx", "")
-                + "\nAs json rpc call\n"
-                + HelpExampleRpc("listunconfirmedtx", ""));
-    }
-
-    Object retObj;
-    Array unconfirmedTxArray;
-
-    for (auto const& tx : pWalletMain->unconfirmedTx) {
-        unconfirmedTxArray.push_back(tx.first.GetHex());
-    }
-
-    retObj.push_back(Pair("unconfirmed_tx", unconfirmedTxArray));
-
-    return retObj;
-}
-
 static Value TestDisconnectBlock(int32_t number) {
     CBlock block;
     Object obj;
@@ -739,7 +715,8 @@ static Value TestDisconnectBlock(int32_t number) {
         } while (--number);
     }
 
-    obj.push_back(Pair("tip", strprintf("hash:%s hight:%s",chainActive.Tip()->GetBlockHash().ToString(),chainActive.Height())));
+    obj.push_back(
+        Pair("tip", strprintf("hash:%s hight:%s", chainActive.Tip()->GetBlockHash().ToString(), chainActive.Height())));
     return obj;
 }
 
