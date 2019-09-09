@@ -17,15 +17,17 @@
 #include "json/json_spirit_value.h"
 #include "persistence/contractdb.h"
 #include "vm/luavm/appaccount.h"
+#include "consensus/forkpool.h"
 
 #include <stdint.h>
 #include <boost/assign/list_of.hpp>
-
 
 using namespace std;
 using namespace boost;
 using namespace boost::assign;
 using namespace json_spirit;
+
+extern CForkPool forkPool ;
 
 int64_t nWalletUnlockTime;
 static CCriticalSection cs_nWalletUnlockTime;
@@ -308,6 +310,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
                            "\"wLKf2NqwtHk3BfzK5wMDfbKYN1SC3weyR4\", \"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\", "
                            "\"WICC:1000000:sawi\", \"WICC:10000:sawi\", \"Hello, WaykiChain!\""));
 
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     CKeyID sendKeyId, recvKeyId;
     if (!GetKeyId(params[0].get_str(), sendKeyId))
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
@@ -316,7 +319,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
 
     CAccount account;
-    if (!pCdMan->pAccountCache->GetAccount(sendKeyId, account)) {
+    if (!spCW->accountCache.GetAccount(sendKeyId, account)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sender account not exist");
     }
 
@@ -341,10 +344,10 @@ Value submitsendtx(const Array& params, bool fHelp) {
      */
     CUserID sendUserId, recvUserId;
     CRegID sendRegId, recvRegId;
-    sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
+    sendUserId = (spCW->accountCache.GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
                      ? CUserID(sendRegId)
                      : CUserID(sendPubKey);
-    recvUserId = (pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
+    recvUserId = (spCW->accountCache.GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
                      ? CUserID(recvRegId)
                      : CUserID(recvKeyId);
 

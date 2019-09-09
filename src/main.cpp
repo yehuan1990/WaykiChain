@@ -1377,7 +1377,8 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
         // Verify profits
         uint64_t profits = delegateAccount.ComputeBlockInflateInterest(block.GetHeight());
         if (pRewardTx->profits != profits) {
-            return state.DoS(100, ERRORMSG("ConnectBlock() : invalid coinbase profits amount(actual=%d vs valid=%d)",
+            return state.DoS(100, ERRORMSG("ConnectBlock() : "
+                                           "invalid coinbase profits amount(actual=%d vs valid=%d)",
                              pRewardTx->profits, profits), REJECT_INVALID, "bad-reward-amount");
         }
     }
@@ -2193,6 +2194,11 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
     for( auto irrBlock: irreversibleList){
 
         bool consensusResult = persistBlock(irrBlock,state, dbp);
+        if(!consensusResult){
+
+            forkPool.onConsensusFailed(irrBlock);
+            break ;
+        }
 
         forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
 
@@ -2204,13 +2210,32 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     AssertLockHeld(cs_main);
 
+   assert(block.GetHeight() != 0 );
+
     uint256 blockHash = block.GetHash();
     LogPrint("INFO", "AcceptBlock[%d]: %s\n", block.GetHeight(), blockHash.GetHex());
     // Check for duplicated block
     if (mapBlockIndex.count(blockHash))
         return state.Invalid(ERRORMSG("AcceptBlock() : block already in mapBlockIndex"), 0, "duplicated");
 
-    assert(block.GetHeight() == 0 || block.GetPrevBlockHash() == chainActive.Tip()->GetBlockHash() || forkPool.HasBlock(block.GetPrevBlockHash()));
+  //  assert(block.GetHeight() == 0  || block.GetPrevBlockHash() == chainActive.Tip()->GetBlockHash() || forkPool.HasBlock(block.GetPrevBlockHash()));
+
+    if(block.GetHeight() <= chainActive.Height()){
+        return state.Invalid(ERRORMSG("AcceptBlock() : block's height is loe chainActive's height"), 0, "duplicated");
+    }
+
+    if(block.GetPrevBlockHash() != chainActive.Tip()->GetBlockHash() && !forkPool.HasBlock(block.GetPrevBlockHash()) ){
+
+        vector<CInv> vGetData;
+        vGetData.push_back(CInv(MSG_BLOCK, block.GetPrevBlockHash()));
+        LOCK(cs_vNodes);
+        for (auto pNode : vNodes) {
+            pNode->PushMessage("getdata", vGetData);
+        }
+        return state.Invalid(ERRORMSG("AcceptBlock() : can't find block's previous block in forkpool "), 0, "orphan") ;
+    }
+
+
 
     CBlock preBlock;
     findPreBlock(preBlock, block.GetPrevBlockHash()) ;
@@ -2226,12 +2251,6 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     CBlockIndex *pBlockIndexPrev = nullptr;
     int32_t height = 0;
     if (block.GetHeight() != 0 || blockHash != SysCfg().GetGenesisBlockHash()) {
-/*        map<uint256, CBlockIndex *>::iterator mi = mapBlockIndex.find(block.GetPrevBlockHash());
-        if (mi == mapBlockIndex.end())
-            return state.DoS(10, ERRORMSG("AcceptBlock() : prev block not found"), 0, "bad-prevblk");
-
-        pBlockIndexPrev = (*mi).second;
-        height          = pBlockIndexPrev->height + 1;*/
 
         CBlock preBlock ;
         findPreBlock(preBlock, block.GetPrevBlockHash()) ;
@@ -2253,14 +2272,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
             return state.Invalid(ERRORMSG("AcceptBlock() : the new block came in too early"),
                                  REJECT_INVALID, "time-too-early");
         }
-/*
 
-        // Process forked branch
-        if (!ProcessForkedChain(block, pBlockIndexPrev, state)) {
-            LogPrint("INFO", "ProcessForkedChain() end: %lld ms\n", GetTimeMillis() - beginTime);
-            return state.DoS(100, ERRORMSG("AcceptBlock() : check proof of pos tx"), REJECT_INVALID, "bad-pos-tx");
-        }
-*/
 
         // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has been upgraded:
         if (block.GetVersion() < 2) {
@@ -2453,6 +2465,10 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
 
 bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBlockPos *dbp) {
 
+
+    if(pBlock->GetHeight() ==122){
+        cout<<"in"<<endl ;
+    }
 
 
 

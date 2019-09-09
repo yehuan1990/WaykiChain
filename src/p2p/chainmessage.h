@@ -34,6 +34,7 @@ extern map<uint256, COrphanBlock *> mapOrphanBlocks;
 extern map<uint256, std::shared_ptr<CBaseTx> > mapOrphanTransactions;
 
 
+
 // Blocks that are in flight, and that are in the queue to be downloaded.
 // Protected by cs_main.
 struct QueuedBlock {
@@ -626,10 +627,32 @@ inline void ProcessGetBlocksMessage(CNode *pFrom, CDataStream &vRecv){
     // Find the last block the caller has in the main chain
     CBlockIndex *pIndex = chainActive.FindFork(locator);
 
+    int32_t nLimit = 500;
+    if(forkPool.blocks.size()>0){
+
+        CBlock b = forkPool.tipBlock ;
+        while(b.GetHash() != chainActive.Tip()->GetBlockHash() ) {
+            pFrom->PushInventory(CInv(MSG_BLOCK, b.GetHash()));
+
+
+            if(hashStop == b.GetPrevBlockHash()){
+                break ;
+            }
+            if(forkPool.blocks.count(b.GetPrevBlockHash())){
+                b = forkPool.blocks[b.GetPrevBlockHash()];
+            } else{
+                break ;
+            }
+
+        }
+
+    }
+
+
     // Send the rest of the chain
     if (pIndex)
         pIndex = chainActive.Next(pIndex);
-    int32_t nLimit = 500;
+
     LogPrint("net", "getblocks %d to %s limit %d\n", (pIndex ? pIndex->height : -1), hashStop.ToString(), nLimit);
     for (; pIndex; pIndex = chainActive.Next(pIndex)) {
         if (pIndex->GetBlockHash() == hashStop) {

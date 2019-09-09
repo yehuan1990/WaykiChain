@@ -11,32 +11,84 @@
 extern CChain chainActive ;
 
 extern bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) ;
+extern bool AcceptToMemoryPool(CTxMemPool &pool, CValidationState &state, CBaseTx *pBaseTx, bool fLimitFree, bool fRejectInsaneFee) ;
+
 
 static bool BlockCompare(CBlock a, CBlock b ){
 
     return a.GetBlockTime() < b.GetBlockTime() ;
 }
 
-
-
-bool CForkPool::AddBlock(CBlock &block) {
+bool CForkPool::Init() {
 
     LOCK(cs_forkpool) ;
+
     if(!inited){
         tipBlock = GetTipBlock();
         spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
         inited = true ;
     }
 
+    return true;
+
+}
+
+bool CForkPool::IsInited() {
+
+    return inited;
+
+}
+
+bool CForkPool::onConsensusFailed(CBlock& block){
+
+    LOCK(cs_forkpool) ;
+
+
+    for(auto iter = blocks.begin(); iter != blocks.end(); iter++){
+
+        for(const auto& ptx: iter->second.vptx){
+            list<std::shared_ptr<CBaseTx> > removed;
+            CValidationState stateDummy;
+
+
+            if(pCdMan->pTxCache->HaveTx(ptx.get()->GetHash())){
+                continue ;
+            }
+
+            if (!ptx->IsBlockRewardTx()) {
+
+                if (!AcceptToMemoryPool(mempool, stateDummy, ptx.get(), false)) {
+                    mempool.Remove(ptx.get(), removed, true);
+                }
+            } else {
+                EraseTransaction(ptx->GetHash());
+            }
+        }
+
+    }
+
+    blocks.clear() ;
+    unCheckedTxHashes.clear() ;
+
+
+    tipBlock = GetTipBlock();
+    spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
+
+    return true ;
+}
+
+bool CForkPool::AddBlock(CBlock &block) {
+
+    LOCK(cs_forkpool) ;
+
+
+    Init() ;
 
     if(block.GetPrevBlockHash() == tipBlock.GetHash()){
-
-
 
         if(VerifyForkPoolBlock(&block,*spCW)){
             tipBlock = block ;
             insertBlock(block) ;
-
         }
     }else{
 
@@ -54,16 +106,17 @@ bool CForkPool::AddBlock(CBlock &block) {
             auto activeTipCache = std::make_shared<CCacheWrapper>(pCdMan);
             reverse(tempBlocks.begin(), tempBlocks.end()) ;
             for(auto b: tempBlocks){
-
-                if(VerifyForkPoolBlock(&b, *activeTipCache)){
+                if(!VerifyForkPoolBlock(&b, *activeTipCache)){
                     return false ;
                 }
             }
 
+
+            insertBlock(block) ;
             if(block.GetHeight()> tipBlock.GetHeight() || block.GetTime() < tipBlock.GetTime()){
 
                 tipBlock = block ;
-                spCW = activeTipCache ;
+                *spCW =  *activeTipCache;
             }
 
         }else{

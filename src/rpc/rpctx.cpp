@@ -18,7 +18,6 @@
 #include "miner/miner.h"
 #include "main.h"
 #include "vm/luavm/luavmrunenv.h"
-
 #include <stdint.h>
 
 #include <boost/assign/list_of.hpp>
@@ -26,6 +25,7 @@
 #include "json/json_spirit_value.h"
 #include "json/json_spirit_reader.h"
 
+#include "consensus/forkpool.h"
 #include "boost/tuple/tuple.hpp"
 #define revert(height) ((height<<24) | (height << 8 & 0xff0000) |  (height>>8 & 0xff00) | (height >> 24))
 
@@ -33,6 +33,8 @@ using namespace std;
 using namespace boost;
 using namespace boost::assign;
 using namespace json_spirit;
+
+extern CForkPool forkPool ;
 
 Value gettxdetail(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1)
@@ -90,7 +92,8 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
 
         CAccount account;
         CUserID userId = keyId;
-        if (!pCdMan->pAccountCache->GetAccount(userId, account))
+        auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
+        if (!spCW->accountCache.GetAccount(userId, account))
             throw JSONRPCError(RPC_WALLET_ERROR, "Account does not exist");
 
 
@@ -180,16 +183,17 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
 
     CUserID sendUserId;
     CRegID sendRegId;
-    sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
+    auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
+    sendUserId = (spCW->accountCache.GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
             ? CUserID(sendRegId)
             : CUserID(sendPubKey);
 
     CRegID recvRegId;
-    if (!pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId)) {
+    if (!spCW->accountCache.GetRegId(CUserID(recvKeyId), recvRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid app regid");
     }
 
-    if (!pCdMan->pContractCache->HaveContract(recvRegId)) {
+    if (!spCW->contractCache.HaveContract(recvRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to get contract");
     }
 
@@ -312,7 +316,8 @@ Value submitcontractdeploytx(const Array& params, bool fHelp) {
         EnsureWalletIsUnlocked();
 
         CAccount account;
-        if (!pCdMan->pAccountCache->GetAccount(keyId, account)) {
+        auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
+        if (!spCW->accountCache.GetAccount(keyId, account)) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Invalid send address");
         }
 
@@ -330,7 +335,7 @@ Value submitcontractdeploytx(const Array& params, bool fHelp) {
         }
 
         CRegID regId;
-        pCdMan->pAccountCache->GetRegId(keyId, regId);
+        spCW->accountCache.GetRegId(keyId, regId);
 
         tx.txUid          = regId;
         tx.contract       = luaContract;
@@ -410,7 +415,8 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
         EnsureWalletIsUnlocked();
         CAccount account;
 
-        if (!pCdMan->pAccountCache->GetAccount(sendKeyId, account)) {
+        auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
+        if (!spCW->accountCache.GetAccount(sendKeyId, account)) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Account does not exist");
         }
 
@@ -420,7 +426,7 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
 
         CUserID sendUserId;
         CRegID sendRegId;
-        sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
+        sendUserId = (spCW->accountCache.GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
                      ? CUserID(sendRegId)
                      : CUserID(sendPubKey);
 
@@ -445,7 +451,7 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address error");
             }
             CAccount delegateAcct;
-            if (!pCdMan->pAccountCache->GetAccount(CUserID(delegateKeyId), delegateAcct)) {
+            if (!spCW->accountCache.GetAccount(CUserID(delegateKeyId), delegateAcct)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address is not exist");
             }
             if (!delegateAcct.HaveOwnerPubKey()) {
@@ -635,9 +641,10 @@ Value getaccountinfo(const Array& params, bool fHelp) {
     userId = keyId;
     Object obj;
     bool found = false;
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
 
     CAccount account;
-    if (pCdMan->pAccountCache->GetAccount(userId, account)) {
+    if (spCW->accountCache.GetAccount(userId, account)) {
         if (!account.owner_pubkey.IsValid()) {
             CPubKey pubKey;
             CPubKey minerPubKey;
@@ -674,13 +681,13 @@ Value getaccountinfo(const Array& params, bool fHelp) {
     if (found) {
         int32_t height       = chainActive.Height();
         uint64_t slideWindow = 0;
-        pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
+        spCW->sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
         // TODO: multi stable coin
         uint64_t bcoinMedianPrice =
-            pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
+                spCW->ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
         Array cdps;
         vector<CUserCDP> userCdps;
-        if (pCdMan->pCdpCache->GetCDPList(account.regid, userCdps)) {
+        if (spCW->cdpCache.GetCDPList(account.regid, userCdps)) {
             for (auto& cdp : userCdps) {
                 cdps.push_back(cdp.ToJson(bcoinMedianPrice));
             }
@@ -756,7 +763,8 @@ Value listcontracts(const Array& params, bool fHelp) {
     bool showDetail = params[0].get_bool();
 
     map<string, CUniversalContract> contracts;
-    if (!pCdMan->pContractCache->GetContracts(contracts)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->contractCache.GetContracts(contracts)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to acquire contracts from db.");
     }
 
@@ -798,12 +806,13 @@ Value getcontractinfo(const Array& params, bool fHelp) {
             HelpExampleRpc("getcontractinfo", "1-1"));
 
     CRegID regid(params[0].get_str());
-    if (regid.IsEmpty() || !pCdMan->pContractCache->HaveContract(regid)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (regid.IsEmpty() || !spCW->contractCache.HaveContract(regid)) {
         throw JSONRPCError(RPC_INVALID_PARAMS, "Invalid contract regid.");
     }
 
     CUniversalContract contract;
-    if (!pCdMan->pContractCache->GetContract(regid, contract)) {
+    if (!spCW->contractCache.GetContract(regid, contract)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to acquire contract from db.");
     }
 

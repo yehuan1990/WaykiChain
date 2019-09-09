@@ -23,6 +23,7 @@
 
 extern CWallet *pWalletMain;
 extern void SetMinerStatus(bool bStatus);
+extern CCriticalSection cs_forkpool;
 //////////////////////////////////////////////////////////////////////////////
 //
 // CoinMiner
@@ -422,15 +423,19 @@ bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
         return ERRORMSG("VerifyForkPoolBlock() : transaction version %d vs current %d", pBlock->vptx[0]->nVersion, INIT_TX_VERSION);
 
     if (true) {
+
         uint64_t totalFuel    = 0;
         uint64_t totalRunStep = 0;
         for (uint32_t i = 1; i < pBlock->vptx.size(); i++) {
+
+            auto spCW1 = std::make_shared<CCacheWrapper>(cwIn);
+
             shared_ptr<CBaseTx> pBaseTx = pBlock->vptx[i];
-            if (spCW->txCache.HaveTx(pBaseTx->GetHash()))
+            if (spCW1->txCache.HaveTx(pBaseTx->GetHash()))
                 return ERRORMSG("VerifyForkPoolBlock() : duplicate transaction, txid=%s", pBaseTx->GetHash().GetHex());
 
             CValidationState state;
-            if (!pBaseTx->ExecuteTx(pBlock->GetHeight(), i, *spCW, state)) {
+            if (!pBaseTx->ExecuteTx(pBlock->GetHeight(), i, *spCW1, state)) {
                 if (SysCfg().IsLogFailures()) {
                     pCdMan->pLogCache->SetExecuteFail(pBlock->GetHeight(), pBaseTx->GetHash(), state.GetRejectCode(),
                                                       state.GetRejectReason());
@@ -447,13 +452,14 @@ bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
             LogPrint("fuel", "VerifyForkPoolBlock() : total fuel:%d, tx fuel:%d runStep:%d fuelRate:%d txid:%s\n", totalFuel,
                      pBaseTx->GetFuel(pBlock->GetFuelRate()), pBaseTx->nRunStep, pBlock->GetFuelRate(),
                      pBaseTx->GetHash().GetHex());
+            spCW1->Flush() ;
         }
 
         if (totalFuel != pBlock->GetFuel())
             return ERRORMSG("VerifyForkPoolBlock() : total fuel(%lu) mismatch what(%u) in block header", totalFuel,
                             pBlock->GetFuel());
     }
-    spCW->Flush() ;
+
 
     return true;
 }
@@ -956,7 +962,12 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = preBlock.GetHeight()+1 ;
 
+
+            forkPool.Init() ;
             auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
+
+
+
 
             auto pBlock = (blockHeight == (int32_t)SysCfg().GetStableCoinGenesisHeight())
                               ? CreateStableCoinGenesisBlock()  // stable coin genesis

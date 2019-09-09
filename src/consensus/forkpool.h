@@ -32,7 +32,7 @@ class CForkPool {
 
 private:
 
-    bool  inited = false ;
+    bool inited = false  ;
 public:
 
     unordered_map<uint256,CBlock,CUint256Hasher> blocks ;
@@ -59,7 +59,8 @@ private:
 
 public:
 
-
+    bool IsInited() ;
+    bool Init();
     bool AddBlock(CBlock& block) ;
 
     bool RemoveBlock(CBlock& block) ;
@@ -72,6 +73,7 @@ public:
 
     CBlock DeterminePreBlock(const int origin) ;
 
+    bool onConsensusFailed(CBlock& block) ;
     vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops );
 };
 
