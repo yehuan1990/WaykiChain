@@ -7,12 +7,12 @@
 #include "commons/SafeInt3.hpp"
 #include "tx/tx.h"
 #include "commons/util.h"
+#include "vm/luavm/lua/lua.hpp"
+#include "vm/luavm/lua/lburner.h"
 
 #define MAX_OUTPUT_COUNT 100
 
 CLuaVMRunEnv::CLuaVMRunEnv() {
-    rawAccount.clear();
-    newAccount.clear();
     rawAppUserAccount.clear();
     newAppUserAccount.clear();
     receipts.clear();
@@ -25,17 +25,15 @@ CLuaVMRunEnv::CLuaVMRunEnv() {
     isCheckAccount  = false;
 }
 
-vector<shared_ptr<CAccount>>& CLuaVMRunEnv::GetRawAccont() { return rawAccount; }
-vector<shared_ptr<CAccount>>& CLuaVMRunEnv::GetNewAccount() { return newAccount; }
 vector<shared_ptr<CAppUserAccount>>& CLuaVMRunEnv::GetNewAppUserAccount() { return newAppUserAccount; }
 vector<shared_ptr<CAppUserAccount>>& CLuaVMRunEnv::GetRawAppUserAccount() { return rawAppUserAccount; }
 
-bool CLuaVMRunEnv::Initialize(shared_ptr<CBaseTx>& tx, CAccountDBCache& accountCache, CContractDBCache& contractCache,
-                              int32_t height) {
+bool CLuaVMRunEnv::Initialize(std::shared_ptr<CBaseTx>& tx, CCacheWrapper &cwIn, int32_t height) {
     pBaseTx         = tx;
     runtimeHeight   = height;
-    pAccountCache   = &accountCache;
-    pContractCache  = &contractCache;
+    pCw = &cwIn;
+    pAccountCache   = &cwIn.accountCache;
+    pContractCache  = &cwIn.contractCache;
 
     if (tx.get()->nTxType != LCONTRACT_INVOKE_TX) {
         LogPrint("ERROR", "unsupported tx type\n");
@@ -89,7 +87,7 @@ tuple<bool, uint64_t, string> CLuaVMRunEnv::ExecuteContract(shared_ptr<CBaseTx>&
         return std::make_tuple(false, 0, string("CLuaVMRunEnv::ExecuteContract, fees too low"));
     }
 
-    if (!Initialize(pBaseTx, cw.accountCache, cw.contractCache, height)) {
+    if (!Initialize(pBaseTx, cw, height)) {
         return std::make_tuple(false, 0, string("VmScript inital Failed"));
     }
 
@@ -130,35 +128,6 @@ tuple<bool, uint64_t, string> CLuaVMRunEnv::ExecuteContract(shared_ptr<CBaseTx>&
     }
 
     return std::make_tuple(true, spend, string("VmScript Success"));
-}
-
-shared_ptr<CAccount> CLuaVMRunEnv::GetNewAccount(shared_ptr<CAccount>& vOldAccount) {
-    if (newAccount.size() == 0)
-        return nullptr;
-    vector<shared_ptr<CAccount>>::iterator Iter;
-    for (Iter = newAccount.begin(); Iter != newAccount.end(); Iter++) {
-        shared_ptr<CAccount> temp = *Iter;
-        if (temp.get()->keyid == vOldAccount.get()->keyid) {
-            newAccount.erase(Iter);
-            return temp;
-        }
-    }
-
-    return nullptr;
-}
-
-shared_ptr<CAccount> CLuaVMRunEnv::GetAccount(shared_ptr<CAccount>& account) {
-    if (rawAccount.size() == 0)
-        return nullptr;
-    vector<shared_ptr<CAccount>>::iterator Iter;
-    for (Iter = rawAccount.begin(); Iter != rawAccount.end(); Iter++) {
-        shared_ptr<CAccount> temp = *Iter;
-        if (account.get()->keyid == temp.get()->keyid) {
-            return temp;
-        }
-    }
-
-    return nullptr;
 }
 
 UnsignedCharArray CLuaVMRunEnv::GetAccountID(const CVmOperate& value) {
@@ -343,57 +312,137 @@ bool CLuaVMRunEnv::CheckAppAcctOperate(CLuaContractInvokeTx* tx) {
 }
 
 bool CLuaVMRunEnv::OperateAccount(const vector<CVmOperate>& operates) {
-    newAccount.clear();
 
     for (auto& operate : operates) {
         uint64_t value;
         memcpy(&value, operate.money, sizeof(operate.money));
 
-        auto tem = std::make_shared<CAccount>();
+        auto pAccount = std::make_shared<CAccount>();
         UnsignedCharArray accountId = GetAccountID(operate);
-        CRegID regid;
-        CKeyID keyid;
+        CUserID uid;
 
         if (accountId.size() == 6) {
+            CRegID regid;
             regid.SetRegID(accountId);
-            if (!pAccountCache->GetAccount(CUserID(regid), *tem.get())) {
-                return false;  // 账户不存在
+            if (!pAccountCache->GetAccount(CUserID(regid), *pAccount)) {
+                LogPrint("vm", "CLuaVMRunEnv::OperateAccount(), account not exist! regid=%s", regid.ToString());
+                return false;
             }
+            uid = regid;
         } else {
+            CKeyID keyid;
             keyid = CKeyID(string(accountId.begin(), accountId.end()));
-            if (!pAccountCache->GetAccount(CUserID(keyid), *tem.get())) {
-                tem->keyid = keyid;
-                // return false;
-                // 未产生过交易记录的账户
+            if (!pAccountCache->GetAccount(keyid, *pAccount)) {
+                pAccount = make_shared<CAccount>(keyid);
+                // TODO: new account fuel
             }
+            uid = keyid;
         }
 
-        shared_ptr<CAccount> vmAccount = GetAccount(tem);
-        if (vmAccount.get() == nullptr) {
-            rawAccount.push_back(tem);
-            vmAccount = tem;
-        }
+        LogPrint("vm", "uid=%s\nbefore account: %s\n", uid.ToString(),
+                 pAccount->ToString());
 
-        LogPrint("vm", "account id:%s\nbefore account: %s\n", HexStr(accountId).c_str(),
-                 vmAccount.get()->ToString());
-
-        if (!vmAccount.get()->OperateBalance(SYMB::WICC, operate.opType, value)) {
+        if (!pAccount->OperateBalance(SYMB::WICC, operate.opType, value)) {
+            LogPrint("vm", "CLuaVMRunEnv::OperateAccount(), operate account failed! uid=%s, operate=%s",
+                uid.ToString(), GetBalanceOpTypeName(operate.opType));
             return false;
         }
 
-        CUserID userId = vmAccount.get()->keyid;
         if (operate.opType == BalanceOpType::ADD_FREE) {
-            receipts.emplace_back(nullId, userId, SYMB::WICC, value, "operate (ADD_FREE) bcoins in original account");
+            receipts.emplace_back(nullId, uid, SYMB::WICC, value, "operate ADD_FREE bcoins of account in contract");
         } else if (operate.opType == BalanceOpType::SUB_FREE) {
-            receipts.emplace_back(userId, nullId, SYMB::WICC, value, "operate (SUB_FREE) bcoins in original account");
+            receipts.emplace_back(uid, nullId, SYMB::WICC, value, "operate SUB_FREE bcoins of account in contract");
         }
 
-        newAccount.push_back(vmAccount);
+        if (!pCw->accountCache.SetAccount(pAccount->keyid, *pAccount)) {
+            LogPrint("vm",
+                     "CLuaVMRunEnv::OperateAccount(), save account failed, uid=%s", uid.ToString());
+            return false;
+        }
 
-        LogPrint("vm", "after account:%s\n", vmAccount.get()->ToString());
+        LogPrint("vm", "after account:%s\n", pAccount->ToString());
     }
 
     return true;
+}
+
+bool CLuaVMRunEnv::TransferAccountAsset(lua_State *L, const vector<AssetTransfer> &transfers) {
+
+    // TODO: count
+    bool ret = true;
+    for (auto& transfer : transfers) {
+        bool isNewAccount = false;
+        CUserID fromUid;
+        if (transfer.isContractAccount) {
+            fromUid = GetContractRegID();
+        } else {
+            fromUid = GetTxAccount();
+        }
+
+        // TODO: need to cache the from account?
+        auto pFromAccount = make_shared<CAccount>();
+        if (!pAccountCache->GetAccount(fromUid, *pFromAccount)) {
+            LogPrint("vm", "CLuaVMRunEnv::TransferAccountAsset(), get from_account failed! from_uid=%s, "
+                     "isContractAccount=%d", transfer.toUid.ToString(), (int)transfer.isContractAccount);
+            ret = false; break;
+        }
+
+        auto pToAccount = make_shared<CAccount>();
+        if (!pAccountCache->GetAccount(transfer.toUid, *pToAccount)) {
+            if (!transfer.toUid.is<CKeyID>()) {
+                LogPrint("vm", "CLuaVMRunEnv::TransferAccountAsset(), get to_account failed! to_uid=%s",
+                    transfer.toUid.ToString());
+                ret = false; break;
+            }
+            // create new user
+            pToAccount = make_shared<CAccount>(transfer.toUid.get<CKeyID>());
+            isNewAccount = true;
+        }
+
+        if (!pFromAccount->OperateBalance(transfer.tokenType, SUB_FREE, transfer.tokenAmount)) {
+            LogPrint("vm", "CLuaVMRunEnv::TransferAccountAsset(), operate SUB_FREE in from_account failed! "
+                "from_uid=%s, isContractAccount=%d, symbol=%s, amount=%llu",
+                fromUid.ToString(), (int)transfer.isContractAccount, transfer.tokenType,
+                transfer.tokenAmount);
+            ret = false; break;
+        }
+
+        if (!pToAccount->OperateBalance(transfer.tokenType, ADD_FREE, transfer.tokenAmount)) {
+            LogPrint("vm", "CLuaVMRunEnv::TransferAccountAsset(), operate ADD_FREE in to_account failed! "
+                     "to_uid=%s, symbol=%s, amount=%llu",
+                     transfer.toUid.ToString(), transfer.tokenType, transfer.tokenAmount);
+            ret = false; break;
+        }
+
+        if (!pCw->accountCache.SetAccount(fromUid, *pFromAccount)) {
+            LogPrint("vm",
+                     "CLuaVMRunEnv::TransferAccountAsset(), save from_account failed, from_uid=%s, "
+                     "isContractAccount=%d",
+                     fromUid.ToString(), (int)transfer.isContractAccount);
+            ret = false; break;
+        }
+
+        if (!pCw->accountCache.SetAccount(transfer.toUid, *pToAccount)) {
+            LogPrint("vm",
+                     "CLuaVMRunEnv::TransferAccountAsset(), save to_account failed, to_uid=%s",
+                     transfer.toUid.ToString(), (int)transfer.isContractAccount);
+            ret = false; break;
+        }
+
+        receipts.emplace_back(fromUid, transfer.toUid, transfer.tokenType, transfer.tokenAmount,
+            "transfer account asset in contract");
+
+        if (isNewAccount) {
+            LUA_BurnAccount(L, FUEL_ACCOUNT_NEW, BURN_VER_R2);
+
+        } else {
+            LUA_BurnAccount(L, FUEL_ACCOUNT_OPERATE, BURN_VER_R2);
+        }
+    }
+    if (!ret) {
+        LUA_BurnAccount(L, FUEL_ACCOUNT_GET_VALUE, BURN_VER_R2);
+    }
+    return ret;
 }
 
 const CRegID& CLuaVMRunEnv::GetContractRegID() {
@@ -424,6 +473,11 @@ int32_t CLuaVMRunEnv::GetBurnVersion() {
 }
 
 uint256 CLuaVMRunEnv::GetCurTxHash() { return pBaseTx.get()->GetHash(); }
+
+
+CCacheWrapper* CLuaVMRunEnv::GetCw() {
+    return pCw;
+}
 
 CContractDBCache* CLuaVMRunEnv::GetScriptDB() { return pContractCache; }
 

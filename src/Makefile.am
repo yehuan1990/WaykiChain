@@ -225,6 +225,7 @@ VMLUA_C = \
 VM_H = \
   vm/luavm/luavmrunenv.h \
   vm/luavm/appaccount.h \
+  vm/luavm/lmylib.h \
   vm/luavm/luavm.h
 
 
