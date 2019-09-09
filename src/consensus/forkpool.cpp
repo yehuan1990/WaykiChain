@@ -8,6 +8,7 @@
 #include "main.h"
 #include <unordered_map>
 
+extern  string GetMinerAccountFromBlock(CBlock block) ;
 extern CChain chainActive ;
 
 extern bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) ;
@@ -24,9 +25,12 @@ bool CForkPool::Init() {
     LOCK(cs_forkpool) ;
 
     if(!inited){
-        tipBlock = GetTipBlock();
-        spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
-        inited = true ;
+
+        if(GetTipBlock(tipBlock)){
+            spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
+            inited = true ;
+        }
+
     }
 
     return true;
@@ -51,7 +55,7 @@ bool CForkPool::onConsensusFailed(CBlock& block){
             CValidationState stateDummy;
 
 
-            if(pCdMan->pTxCache->HaveTx(ptx.get()->GetHash())){
+            if(pCdMan->pTxCache->HaveTx(ptx.get()->GetHash()) != uint256()){
                 continue ;
             }
 
@@ -71,7 +75,7 @@ bool CForkPool::onConsensusFailed(CBlock& block){
     unCheckedTxHashes.clear() ;
 
 
-    tipBlock = GetTipBlock();
+    GetTipBlock(tipBlock);
     spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
 
     return true ;
@@ -191,26 +195,23 @@ bool CForkPool::GetBlock(const uint256 hash, CBlock& block) {
 
 CBlock CForkPool::DeterminePreBlock(const int origin){
 
-    LogPrint("INFO", "FORKPOOL SIZE ==%d", blocks.size()) ;
+    LogPrint("INFO", "FORKPOOL SIZE ==%d\n", blocks.size()) ;
 
+    CBlock currentTipBlock ;
+    GetTipBlock(currentTipBlock);
+     if(origin == 3 || origin ==5){
+         LogPrint("INFO","CHAIN TIP BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", currentTipBlock.GetHash().GetHex(),currentTipBlock.GetPrevBlockHash().GetHex(),currentTipBlock.GetHeight(),GetMinerAccountFromBlock( currentTipBlock)) ;
+         for(auto iter = blocks.begin(); iter != blocks.end(); iter++){
 
-    /* if(origin == 3 || origin ==5){
-         auto block= GetTipBlock();
-         LogPrint("INFO","CHAIN TIP BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight()) ;
-         for(auto iter = forkPool.blocks.begin(); iter != forkPool.blocks.end(); iter++){
-
-             block = iter->second ;
-             LogPrint("INFO","BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight()) ;
+             auto block = iter->second ;
+             LogPrint("INFO","BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
          }
-     }*/
+     }
 
     vector<CBlock> vFixTop ;
-    CBlock block ;
 
-    vFixTop.push_back(GetTipBlock()) ;
+    vFixTop.push_back(currentTipBlock) ;
     vector<CBlock> vLongestTop = GetLongestTop(vFixTop) ;
-
-
 /*
     vector<CBlock> maxHeightBlocks = FindAllMaxHeightBlocks() ;
     if(maxHeightBlocks.empty()){

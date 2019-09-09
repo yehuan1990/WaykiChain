@@ -15,9 +15,11 @@
 #include "entities/account.h"
 #include "tx/tx.h"
 #include "persistence/dexdb.h"
+#include "consensus/forkpool.h"
 
 using namespace std;
 using namespace json_spirit;
+
 
 string RegIDToAddress(CUserID &userId);
 bool GetKeyId(const string &addr, CKeyID &keyId);
@@ -25,6 +27,7 @@ Object GetTxDetailJSON(const uint256& txid);
 Array GetTxAddressDetail(std::shared_ptr<CBaseTx> pBaseTx);
 
 Object SubmitTx(const CUserID &userId, CBaseTx &tx);
+
 
 
 namespace JSON {

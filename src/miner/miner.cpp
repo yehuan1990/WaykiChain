@@ -431,7 +431,7 @@ bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
             auto spCW1 = std::make_shared<CCacheWrapper>(cwIn);
 
             shared_ptr<CBaseTx> pBaseTx = pBlock->vptx[i];
-            if (spCW1->txCache.HaveTx(pBaseTx->GetHash()))
+            if (spCW1->txCache.HaveTx(pBaseTx->GetHash()) != uint256())
                 return ERRORMSG("VerifyForkPoolBlock() : duplicate transaction, txid=%s", pBaseTx->GetHash().GetHex());
 
             CValidationState state;
@@ -513,7 +513,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
             CBaseTx *pBaseTx = std::get<2>(item).get();
 
-            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) != uint256() || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
                 LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : find duplicate tx, txid: %s\n",
                          pBaseTx->GetHash().GetHex());
                 continue ;
@@ -684,7 +684,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
 
             CBaseTx *pBaseTx = std::get<2>(item).get();
 
-            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
+            if (spCW->txCache.HaveTx(pBaseTx->GetHash()) != uint256() || forkPool.unCheckedTxHashes.count(pBaseTx->GetHash())){
                 LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : find duplicate tx, txid: %s\n",
                          pBaseTx->GetHash().GetHex());
                 continue ;

@@ -21,7 +21,7 @@ class CValidationState ;
 class CCacheWrapper ;
 
 static CCriticalSection cs_forkpool;
-extern CBlock GetTipBlock() ;
+extern bool GetTipBlock(CBlock& block) ;
 extern CCacheDBManager *pCdMan ;
 
 extern bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) ;

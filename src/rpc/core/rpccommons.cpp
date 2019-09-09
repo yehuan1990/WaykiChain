@@ -11,6 +11,8 @@
 #include "init.h"
 #include "rpcserver.h"
 
+extern CForkPool forkPool ;
+
 /*
 std::string split implementation by using delimeter as a character.
 */
@@ -171,17 +173,18 @@ bool ParseRpcInputMoney(const string &comboMoneyStr, ComboMoney &comboMoney, con
 Object SubmitTx(const CUserID &userId, CBaseTx &tx) {
 
     CAccount account;
-    if (!pCdMan->pAccountCache->GetAccount(userId, account) || !account.HaveOwnerPubKey()) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->accountCache.GetAccount(userId, account) || !account.HaveOwnerPubKey()) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Account is unregistered");
     }
 
     CKeyID keyId;
-    if (!pCdMan->pAccountCache->GetKeyId(userId, keyId)) {
+    if (!spCW->accountCache.GetKeyId(userId, keyId)) {
         throw JSONRPCError(RPC_WALLET_ERROR, "Failed to acquire key id");
     }
 
     CRegID regId;
-    pCdMan->pAccountCache->GetRegId(userId, regId);
+    spCW->accountCache.GetRegId(userId, regId);
     tx.txUid = regId;
 
     assert(pWalletMain != nullptr);
@@ -207,7 +210,8 @@ Object SubmitTx(const CUserID &userId, CBaseTx &tx) {
 
 string RegIDToAddress(CUserID &userId) {
     CKeyID keyId;
-    if (pCdMan->pAccountCache->GetKeyId(userId, keyId))
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (spCW->accountCache.GetKeyId(userId, keyId))
         return keyId.ToAddress();
 
     return "cannot get address from given RegId";
@@ -268,7 +272,8 @@ Object GetTxDetailJSON(const uint256& txid) {
                     obj.push_back(Pair("block_hash",        header.GetHash().GetHex()));
 
                     vector<CReceipt> receipts;
-                    pCdMan->pTxReceiptCache->GetTxReceipts(txid, receipts);
+                    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+                    spCW->txReceiptCache.GetTxReceipts(txid, receipts);
                     Array receiptArray;
                     for (const auto &receipt : receipts) {
                         receiptArray.push_back(receipt.ToJson());

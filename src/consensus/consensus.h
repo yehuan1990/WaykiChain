@@ -19,7 +19,7 @@ extern bool ReadBlockFromDisk(const CBlockIndex *pIndex, CBlock &block) ;
 extern CForkPool forkPool ;
 
 extern CBlock currentIrreversibleTop;
-extern CBlock GetTipBlock();
+extern bool GetTipBlock(CBlock& block);
 
  string GetMinerAccountFromBlock(CBlock block) ;
 

@@ -1281,7 +1281,7 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
             }
 
             std::shared_ptr<CBaseTx> &pBaseTx = block.vptx[index];
-            if (cw.txCache.HaveTx((pBaseTx->GetHash())) != uint256())
+
             if (cw.txCache.HaveTx((pBaseTx->GetHash())) !=uint256()){
 
                 for (int32_t index = 1; index < (int32_t)block.vptx.size(); ++index) {
@@ -2287,19 +2287,9 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         }
     }
 
-
-    //add to fork pool
-    forkPool.AddBlock(block) ;
-
-    //delete txs of this block from mempool
-    for (auto &pTxItem : block.vptx) {
-        mempool.memPoolTxs.erase(pTxItem->GetHash());
-    }
-
     // Relay inventory, but don't relay old inventory during initial block download
     //if (chainActive.Tip()->GetBlockHash() == blockHash) {
     LOCK(cs_vNodes);
-
     for (auto pNode : vNodes) {
         if (chainActive.Height() > (pNode->nStartingHeight != -1 ? pNode->nStartingHeight - 2000 : 0))
             pNode->PushInventory(CInv(MSG_BLOCK, blockHash));
@@ -2308,6 +2298,13 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
 
 
+    //add to fork pool
+    forkPool.AddBlock(block) ;
+
+    //delete txs of this block from mempool
+    for (auto &pTxItem : block.vptx) {
+        mempool.memPoolTxs.erase(pTxItem->GetHash());
+    }
 
     ThreadProcessConsensus(state, dbp) ;
 
@@ -2450,8 +2447,8 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
     }
 
     for(auto tx : pBlock->vptx){
-        if(spCW->txCache.HaveTx(tx->GetHash())){
-            return state.DoS(100, ERRORMSG("ConnectBlock() : txid=%s duplicated", tx->GetHash().GetHex()),
+        if(spCW->txCache.HaveTx(tx->GetHash()) != uint256()){
+            return state.DoS(100, ERRORMSG("checktBlock() : txid=%s duplicated", tx->GetHash().GetHex()),
                              REJECT_INVALID, "tx-duplicated");
         }
     }
@@ -3667,11 +3664,11 @@ bool IsInitialBlockDownload() {
     return (GetTime() - nLastUpdate < SysCfg().GetBlockIntervalPreStableCoinRelease() && chainActive.Tip()->GetBlockTime() < GetTime() - 24 * 60 * 60);
 }
 
-CBlock GetTipBlock(){
+bool GetTipBlock(CBlock& block){
 
     auto idx = chainActive.Tip() ;
-    ReadBlockFromDisk(idx, currentIrreversibleTop) ;
-    return currentIrreversibleTop ;
+    ReadBlockFromDisk(idx, block) ;
+
 }
 
 FILE *OpenDiskFile(const CDiskBlockPos &pos, const char *prefix, bool fReadOnly) {
