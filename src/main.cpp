@@ -478,10 +478,10 @@ int32_t CMerkleTx::GetBlocksToMaturity() const {
     return max(0, (BLOCK_REWARD_MATURITY + 1) - GetDepthInMainChain());
 }
 
-int32_t GetTxConfirmHeight(const uint256 &hash, CContractDBCache &scriptDBCache) {
+int32_t GetTxConfirmHeight(const uint256 &hash, CContractDBCache &contractCache) {
     if (SysCfg().IsTxIndex()) {
         CDiskTxPos diskTxPos;
-        if (scriptDBCache.ReadTxIndex(hash, diskTxPos)) {
+        if (contractCache.ReadTxIndex(hash, diskTxPos)) {
             CAutoFile file(OpenBlockFile(diskTxPos, true), SER_DISK, CLIENT_VERSION);
             CBlockHeader header;
             try {
@@ -662,8 +662,6 @@ arith_uint256 GetBlockProof(const CBlockIndex &block) {
     // or ~bnTarget / (nTarget+1) + 1.
     return (~bnTarget / (bnTarget + 1)) + 1;
 }
-
-
 
 bool fLargeWorkForkFound         = false;
 bool fLargeWorkInvalidChainFound = false;
@@ -1086,10 +1084,10 @@ static bool ProcessGenesisBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *p
     return true;
 }
 
-bool SaveTxIndex(CBaseTx &baseTx, CCacheWrapper &cw, CValidationState &state, CDiskTxPos &diskTxPos) {
+bool SaveTxIndex(const uint256 &txid, CCacheWrapper &cw, CValidationState &state, const CDiskTxPos &diskTxPos) {
     if (SysCfg().IsTxIndex()) {
         // TODO: should move to blockTxCache?
-        if (!cw.contractCache.SetTxIndex(baseTx.GetHash(), diskTxPos))
+        if (!cw.contractCache.SetTxIndex(txid, diskTxPos))
             return state.Abort(_("Failed to write transaction index"));
     }
     return true;
@@ -1236,6 +1234,9 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
 
     CBlockUndo blockUndo;
     int64_t nStart = GetTimeMicros();
+    std::vector<pair<uint256, CDiskTxPos> > vPos;
+    vPos.reserve(block.vptx.size());
+
     CDiskTxPos pos(pIndex->GetBlockPos(), GetSizeOfCompactSize(block.vptx.size()));
     CDiskTxPos rewardPos = pos;
     pos.nTxOffset += ::GetSerializeSize(block.vptx[0], SER_DISK, CLIENT_VERSION);
@@ -1280,7 +1281,8 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
             }
 
             std::shared_ptr<CBaseTx> &pBaseTx = block.vptx[index];
-            if (cw.txCache.HaveTx((pBaseTx->GetHash()))){
+            if (cw.txCache.HaveTx((pBaseTx->GetHash())) != uint256())
+            if (cw.txCache.HaveTx((pBaseTx->GetHash())) !=uint256()){
 
                 for (int32_t index = 1; index < (int32_t)block.vptx.size(); ++index) {
 
@@ -1308,10 +1310,7 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
                 return false;
             }
 
-            if (!SaveTxIndex(*pBaseTx, cw, state, pos)) {
-                cw.DisableTxUndoLog();
-                return false;
-            }
+            vPos.push_back(make_pair(pBaseTx->GetHash(), pos));
 
             blockUndo.vtxundo.push_back(cw.txUndo);
             cw.DisableTxUndoLog();
@@ -1377,8 +1376,7 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
         // Verify profits
         uint64_t profits = delegateAccount.ComputeBlockInflateInterest(block.GetHeight());
         if (pRewardTx->profits != profits) {
-            return state.DoS(100, ERRORMSG("ConnectBlock() : "
-                                           "invalid coinbase profits amount(actual=%d vs valid=%d)",
+            return state.DoS(100, ERRORMSG("ConnectBlock() : invalid coinbase profits amount(actual=%d vs valid=%d)",
                              pRewardTx->profits, profits), REJECT_INVALID, "bad-reward-amount");
         }
     }
@@ -1399,9 +1397,16 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
         return false;
     }
 
-    if (!SaveTxIndex(*block.vptx[0], cw, state, rewardPos)) {
+    if (!SaveTxIndex(block.vptx[0]->GetHash(), cw, state, rewardPos)) {
         cw.DisableTxUndoLog();
         return false;
+    }
+
+    for (const auto &item : vPos) {
+        if (!SaveTxIndex(item.first, cw, state, item.second)) {
+            cw.DisableTxUndoLog();
+            return false;
+        }
     }
 
     blockUndo.vtxundo.push_back(cw.txUndo);
@@ -1778,7 +1783,6 @@ bool ActivateBestChain(CValidationState &state) {
 bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos &pos) {
     // Check for duplicate
     uint256 hash = block.GetHash();
-
     if (mapBlockIndex.count(hash))
         return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
 
@@ -1927,27 +1931,26 @@ bool ProcessForkedChain(const CBlock &block, CBlockIndex *pPreBlockIndex, CValid
     if (mapForkCache.count(pPreBlockIndex->GetBlockHash())) {
         uint256 blockHash   = pPreBlockIndex->GetBlockHash();
         int32_t blockHeight = pPreBlockIndex->height;
+        *spCW               = *mapForkCache[blockHash];
+        // spCW->sysParamCache = mapForkCache[blockHash]->sysParamCache;
+        // spCW->accountCache  = mapForkCache[blockHash]->accountCache;
+        // spCW->assetCache    = mapForkCache[blockHash]->assetCache;
+        // spCW->contractCache = mapForkCache[blockHash]->contractCache;
+        // spCW->delegateCache = mapForkCache[blockHash]->delegateCache;
+        // spCW->cdpCache      = mapForkCache[blockHash]->cdpCache;
+        // spCW->dexCache      = mapForkCache[blockHash]->dexCache;
+        // spCW->txReceiptCache= mapForkCache[blockHash]->txReceiptCache;
+        // spCW->txCache       = mapForkCache[blockHash]->txCache;
+        // spCW->ppCache       = mapForkCache[blockHash]->ppCache;
 
-        spCW->sysParamCache = mapForkCache[blockHash]->sysParamCache;
-        spCW->accountCache  = mapForkCache[blockHash]->accountCache;
-        spCW->assetCache    = mapForkCache[blockHash]->assetCache;
-        spCW->contractCache = mapForkCache[blockHash]->contractCache;
-        spCW->delegateCache = mapForkCache[blockHash]->delegateCache;
-        spCW->cdpCache      = mapForkCache[blockHash]->cdpCache;
-        spCW->dexCache      = mapForkCache[blockHash]->dexCache;
-        spCW->txReceiptCache= mapForkCache[blockHash]->txReceiptCache;
-        spCW->txCache       = mapForkCache[blockHash]->txCache;
-        spCW->ppCache       = mapForkCache[blockHash]->ppCache;
-
-        LogPrint("INFO", "ProcessForkedChain() : found [%d]: %s in cache\n",
-            blockHeight, blockHash.GetHex());
+        LogPrint("INFO", "ProcessForkedChain() : found [%d]: %s in cache\n", blockHeight, blockHash.GetHex());
     } else {
         int64_t beginTime        = GetTimeMillis();
         CBlockIndex *pBlockIndex = chainActive.Tip();
 
         while (pPreBlockIndex != pBlockIndex) {
-            LogPrint("INFO", "ProcessForkedChain() : disconnect block [%d]: %s\n",
-                pBlockIndex->height, pBlockIndex->GetBlockHash().GetHex());
+            LogPrint("INFO", "ProcessForkedChain() : disconnect block [%d]: %s\n", pBlockIndex->height,
+                     pBlockIndex->GetBlockHash().GetHex());
 
             CBlock block;
             if (!ReadBlockFromDisk(pBlockIndex, block))
@@ -1955,8 +1958,8 @@ bool ProcessForkedChain(const CBlock &block, CBlockIndex *pPreBlockIndex, CValid
 
             bool bfClean = true;
             if (!DisconnectBlock(block, *spCW, pBlockIndex, state, &bfClean)) {
-                return ERRORMSG("ProcessForkedChain() : failed to disconnect block [%d]: %s",
-                                pBlockIndex->height, pBlockIndex->GetBlockHash().ToString());
+                return ERRORMSG("ProcessForkedChain() : failed to disconnect block [%d]: %s", pBlockIndex->height,
+                                pBlockIndex->GetBlockHash().ToString());
             }
 
             pBlockIndex = pBlockIndex->pprev;
@@ -1970,31 +1973,33 @@ bool ProcessForkedChain(const CBlock &block, CBlockIndex *pPreBlockIndex, CValid
     }
 
     if (forkChainTipFound) {
-        spForkCW->sysParamCache  = mapForkCache[forkChainTipBlockHash]->sysParamCache;
-        spForkCW->accountCache   = mapForkCache[forkChainTipBlockHash]->accountCache;
-        spForkCW->assetCache     = mapForkCache[forkChainTipBlockHash]->assetCache;
-        spForkCW->contractCache  = mapForkCache[forkChainTipBlockHash]->contractCache;
-        spForkCW->delegateCache  = mapForkCache[forkChainTipBlockHash]->delegateCache;
-        spForkCW->cdpCache       = mapForkCache[forkChainTipBlockHash]->cdpCache;
-        spForkCW->dexCache       = mapForkCache[forkChainTipBlockHash]->dexCache;
-        spForkCW->txReceiptCache = mapForkCache[forkChainTipBlockHash]->txReceiptCache;
-        spForkCW->txCache        = mapForkCache[forkChainTipBlockHash]->txCache;
-        spForkCW->ppCache        = mapForkCache[forkChainTipBlockHash]->ppCache;
+        *spForkCW = *mapForkCache[forkChainTipBlockHash];
+        // spForkCW->sysParamCache  = mapForkCache[forkChainTipBlockHash]->sysParamCache;
+        // spForkCW->accountCache   = mapForkCache[forkChainTipBlockHash]->accountCache;
+        // spForkCW->assetCache     = mapForkCache[forkChainTipBlockHash]->assetCache;
+        // spForkCW->contractCache  = mapForkCache[forkChainTipBlockHash]->contractCache;
+        // spForkCW->delegateCache  = mapForkCache[forkChainTipBlockHash]->delegateCache;
+        // spForkCW->cdpCache       = mapForkCache[forkChainTipBlockHash]->cdpCache;
+        // spForkCW->dexCache       = mapForkCache[forkChainTipBlockHash]->dexCache;
+        // spForkCW->txReceiptCache = mapForkCache[forkChainTipBlockHash]->txReceiptCache;
+        // spForkCW->txCache        = mapForkCache[forkChainTipBlockHash]->txCache;
+        // spForkCW->ppCache        = mapForkCache[forkChainTipBlockHash]->ppCache;
     } else {
-        spForkCW->sysParamCache  = spCW->sysParamCache;
-        spForkCW->accountCache   = spCW->accountCache;
-        spForkCW->assetCache     = spCW->assetCache;
-        spForkCW->contractCache  = spCW->contractCache;
-        spForkCW->delegateCache  = spCW->delegateCache;
-        spForkCW->cdpCache       = spCW->cdpCache;
-        spForkCW->dexCache       = spCW->dexCache;
-        spForkCW->txReceiptCache = spCW->txReceiptCache;
-        spForkCW->txCache        = spCW->txCache;
-        spForkCW->ppCache        = spCW->ppCache;
+        *spForkCW = *spCW;
+        // spForkCW->sysParamCache  = spCW->sysParamCache;
+        // spForkCW->accountCache   = spCW->accountCache;
+        // spForkCW->assetCache     = spCW->assetCache;
+        // spForkCW->contractCache  = spCW->contractCache;
+        // spForkCW->delegateCache  = spCW->delegateCache;
+        // spForkCW->cdpCache       = spCW->cdpCache;
+        // spForkCW->dexCache       = spCW->dexCache;
+        // spForkCW->txReceiptCache = spCW->txReceiptCache;
+        // spForkCW->txCache        = spCW->txCache;
+        // spForkCW->ppCache        = spCW->ppCache;
     }
 
-    uint256 forkChainBestBlockHash = spForkCW->accountCache.GetBestBlock();
-    int32_t forkChainBestBlockHeight   = mapBlockIndex[forkChainBestBlockHash]->height;
+    uint256 forkChainBestBlockHash   = spForkCW->accountCache.GetBestBlock();
+    int32_t forkChainBestBlockHeight = mapBlockIndex[forkChainBestBlockHash]->height;
     LogPrint("INFO", "ProcessForkedChain() : fork chain's best block [%d]: %s\n", forkChainBestBlockHeight,
              forkChainBestBlockHash.GetHex());
 
@@ -2059,7 +2064,7 @@ bool ProcessForkedChain(const CBlock &block, CBlockIndex *pPreBlockIndex, CValid
                              item->GetHash().GetHex()), REJECT_INVALID, "tx-invalid-height");
         }
         // Verify duplicated transaction
-        if (spForkCW->txCache.HaveTx(item->GetHash()))
+        if (spForkCW->txCache.HaveTx(item->GetHash()) != uint256())
             return state.DoS(100, ERRORMSG("ProcessForkedChain() : txid=%s has been confirmed",
                              item->GetHash().GetHex()), REJECT_INVALID, "duplicated-txid");
     }
@@ -2262,7 +2267,6 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
             return state.DoS(100, ERRORMSG("AcceptBlock() : height given in block mismatches with its actual height"),
                              REJECT_INVALID, "incorrect-height");
         }
-
 
         int64_t beginTime = GetTimeMillis();
 
@@ -2559,7 +2563,6 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
     LogPrint("INFO", "ProcessBlock() elapse time:%lld ms\n", GetTimeMillis() - llBeginTime);
     return true;
 }
-
 
 CMerkleBlock::CMerkleBlock(const CBlock &block, CBloomFilter &filter) {
     header = block.GetBlockHeader();
