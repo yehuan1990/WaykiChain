@@ -63,6 +63,7 @@ public:
     bool Init();
     bool AddBlock(CBlock& block) ;
 
+    int32_t TipHeight() ;
     bool RemoveBlock(CBlock& block) ;
 
     bool RemoveUnderHeight(const uint32_t height) ;
@@ -71,7 +72,7 @@ public:
 
     bool GetBlock(const uint256 hash, CBlock& block) ;
 
-    CBlock DeterminePreBlock(const int origin) ;
+    bool DeterminePreBlock(const int origin, CBlock& block) ;
 
     bool onConsensusFailed(CBlock& block) ;
     vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops );

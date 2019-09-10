@@ -37,6 +37,13 @@ bool CForkPool::Init() {
 
 }
 
+int32_t CForkPool::TipHeight(){
+
+    if(!inited)
+        return 0 ;
+    return (int32_t)(tipBlock.GetHeight());
+}
+
 bool CForkPool::IsInited() {
 
     return inited;
@@ -193,26 +200,30 @@ bool CForkPool::GetBlock(const uint256 hash, CBlock& block) {
 
 }
 
-CBlock CForkPool::DeterminePreBlock(const int origin){
+bool CForkPool::DeterminePreBlock(const int origin, CBlock& block){
 
+    block = tipBlock ;
+    return true;
+
+    /*
     LogPrint("INFO", "FORKPOOL SIZE ==%d\n", blocks.size()) ;
 
     CBlock currentTipBlock ;
     GetTipBlock(currentTipBlock);
-     if(origin == 3 || origin ==5){
+   *//*  if(origin == 3 || origin ==5){
          LogPrint("INFO","CHAIN TIP BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", currentTipBlock.GetHash().GetHex(),currentTipBlock.GetPrevBlockHash().GetHex(),currentTipBlock.GetHeight(),GetMinerAccountFromBlock( currentTipBlock)) ;
          for(auto iter = blocks.begin(); iter != blocks.end(); iter++){
 
              auto block = iter->second ;
              LogPrint("INFO","BLOCKINFO: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
          }
-     }
+     }*//*
 
     vector<CBlock> vFixTop ;
 
     vFixTop.push_back(currentTipBlock) ;
     vector<CBlock> vLongestTop = GetLongestTop(vFixTop) ;
-/*
+*//*
     vector<CBlock> maxHeightBlocks = FindAllMaxHeightBlocks() ;
     if(maxHeightBlocks.empty()){
         maxHeightBlocks = vFixTop ;
@@ -225,7 +236,7 @@ CBlock CForkPool::DeterminePreBlock(const int origin){
         if(BlockInVector(block, vLongestTop))
             return block ;
     }
-*/
+*//*
 
 
     std:: sort(vLongestTop.begin(), vLongestTop.end(), BlockCompare) ;
@@ -233,7 +244,7 @@ CBlock CForkPool::DeterminePreBlock(const int origin){
 
     LogPrint("INFO", "determinePreResult info,origin =%d ,HEIGHT=%d, hash =%s, preHash = %s \n", origin, result.GetHeight(),result.GetHash().GetHex(), result.GetPrevBlockHash().GetHex() )
 
-    return result ;
+    return result ;*/
 }
 
 vector<CBlock> CForkPool::GetLongestTop(const vector<CBlock> longtestTops ){

@@ -1828,8 +1828,7 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
     if (!pCdMan->pBlockTreeDb->Flush())
         return state.Abort(_("Failed to sync block index"));
 
-    if (chainActive.Height() > nSyncTipHeight)
-        nSyncTipHeight = chainActive.Height();
+
 
     return true;
 }
@@ -2114,7 +2113,9 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 
 
     vector<CBlock> irreversibleList ;
-    DetermineIrreversibleList( DeterminePreBlock(1), irreversibleList) ;
+    CBlock preBlock ;
+    DeterminePreBlock(1, preBlock) ;
+    DetermineIrreversibleList( preBlock, irreversibleList) ;
     for( auto irrBlock: irreversibleList){
 
         bool consensusResult = persistBlock(irrBlock,state, dbp);
@@ -2219,6 +2220,8 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     //}
 
 
+    if (block.GetHeight() > nSyncTipHeight)
+        nSyncTipHeight = block.GetHeight();
 
     //add to fork pool
     forkPool.AddBlock(block) ;

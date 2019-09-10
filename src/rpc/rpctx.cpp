@@ -503,12 +503,13 @@ Value listaddr(const Array& params, bool fHelp) {
         if (setKeyId.size() == 0) {
             return retArray;
         }
-        CAccountDBCache accView(*pCdMan->pAccountCache);
+        auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+        CAccountDBCache accView(spCW->accountCache);
 
         for (const auto &keyId : setKeyId) {
             CUserID userId(keyId);
             CAccount account;
-            pCdMan->pAccountCache->GetAccount(userId, account);
+            spCW->accountCache.GetAccount(userId, account);
             CKeyCombi keyCombi;
             pWalletMain->GetKeyCombi(keyId, keyCombi);
 
@@ -914,7 +915,8 @@ Value getcontractdata(const Array& params, bool fHelp) {
         key = params[1].get_str();
     }
     string value;
-    if (!pCdMan->pContractCache->GetContractData(regId, key, value)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->contractCache.GetContractData(regId, key, value)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract data");
     }
 
@@ -1074,9 +1076,10 @@ Value signtxraw(const Array& params, bool fHelp) {
             CMulsigTx *pTx = dynamic_cast<CMulsigTx*>(pBaseTx.get());
 
             vector<CSignaturePair>& signaturePairs = pTx->signaturePairs;
+            auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
             for (const auto& keyIdItem : keyIds) {
                 CRegID regId;
-                if (!pCdMan->pAccountCache->GetRegId(CUserID(keyIdItem), regId)) {
+                if (!spCW->accountCache.GetRegId(CUserID(keyIdItem), regId)) {
                     throw JSONRPCError(RPC_INVALID_PARAMETER, "Address is unregistered");
                 }
 
@@ -1196,7 +1199,8 @@ Value decodetxraw(const Array& params, bool fHelp) {
     if (!pBaseTx.get()) {
         return obj;
     }
-    obj = pBaseTx->ToJson(*pCdMan->pAccountCache);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    obj = pBaseTx->ToJson(spCW->accountCache);
     return obj;
 }
 
@@ -1236,7 +1240,8 @@ Value getcontractaccountinfo(const Array& params, bool fHelp) {
             appUserAccount = std::make_shared<CAppUserAccount>(acctKey);
         }
     } else {
-        if (!pCdMan->pContractCache->GetContractAccount(appRegId, acctKey, *appUserAccount.get())) {
+        auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+        if (!spCW->contractCache.GetContractAccount(appRegId, acctKey, *appUserAccount.get())) {
             appUserAccount = std::make_shared<CAppUserAccount>(acctKey);
         }
     }
@@ -1270,7 +1275,8 @@ Value listcontractassets(const Array& params, bool fHelp) {
         if (setKeyId.size() == 0)
             return retArray;
 
-        CContractDBCache contractScriptTemp(*pCdMan->pContractCache);
+        auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+        CContractDBCache contractScriptTemp(spCW->contractCache);
 
         for (const auto &keyId : setKeyId) {
 
@@ -1358,7 +1364,8 @@ Value gettotalcoins(const Array& params, bool fHelp) {
 
     uint64_t totalCoins(0);
     uint64_t totalRegIds(0);
-    std::tie(totalCoins, totalRegIds) = pCdMan->pAccountCache->TraverseAccount();
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    std::tie(totalCoins, totalRegIds) = spCW->accountCache.TraverseAccount();
     // auto [totalCoins, totalRegIds] = pCdMan->pAccountCache->TraverseAccount(); //C++17
     obj.push_back(Pair("total_coins", ValueFromAmount(totalCoins)));
     obj.push_back(Pair("total_regids", totalRegIds));
@@ -1385,7 +1392,8 @@ Value listdelegates(const Array& params, bool fHelp) {
     }
 
     vector<CRegID> delegatesList;
-    if (!pCdMan->pDelegateCache->GetTopDelegateList(delegatesList)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->delegateCache.GetTopDelegateList(delegatesList)) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to get delegates list");
     }
 
@@ -1396,7 +1404,7 @@ Value listdelegates(const Array& params, bool fHelp) {
 
     CAccount account;
     for (const auto& delegate : delegatesList) {
-        if (!pCdMan->pAccountCache->GetAccount(delegate, account)) {
+        if (!spCW->accountCache.GetAccount(delegate, account)) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to get account info");
         }
         delegateArray.push_back(account.ToJsonObj());

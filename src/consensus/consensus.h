@@ -21,10 +21,10 @@ extern CForkPool forkPool ;
 extern CBlock currentIrreversibleTop;
 extern bool GetTipBlock(CBlock& block);
 
- string GetMinerAccountFromBlock(CBlock block) ;
+string GetMinerAccountFromBlock(CBlock block) ;
 
- CBlock DeterminePreBlock(const int origin) ;
- bool DetermineIrreversibleList( CBlock preBlock, vector<CBlock>& newIrreversibleBlocks ) ;
+bool DeterminePreBlock(const int origin, CBlock& preBlock) ;
+bool DetermineIrreversibleList( CBlock preBlock, vector<CBlock>& newIrreversibleBlocks ) ;
 
  CBlockIndex* preBlockIndex(int origin) ;
 

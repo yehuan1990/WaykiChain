@@ -85,6 +85,6 @@ uint32_t GetElementForBurn(CBlockIndex *pIndex);
 
 uint32_t GetElementForBurn(CBlock& pBlock);
 
-void GetPriorityTx(vector<TxPriority> &vecPriority, int32_t nFuelRate);
+void GetPriorityTx(vector<TxPriority> &vecPriority, int32_t nFuelRate, int32_t currHeight);
 
 #endif  // COIN_MINER_H

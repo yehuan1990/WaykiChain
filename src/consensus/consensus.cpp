@@ -9,20 +9,22 @@
 
  string GetMinerAccountFromBlock(CBlock block){
 
-    auto spCW = std::make_shared<CCacheWrapper>(pCdMan);
+/*    auto spCW = std::make_shared<CCacheWrapper>(pCdMan);
     CAccount minerAccount ;
-    if (spCW->accountCache.GetAccount(block.vptx[0]->txUid, minerAccount)){
+    if (spCW->accountCache.GetAccount(, minerAccount)){
         return minerAccount.keyid.ToAddress();
     } else{
         return "notFindMinerAddress" ;
-    }
+    }*/
+
+    return block.vptx[0]->txUid.ToString() ;
 }
 
 
 
- CBlock DeterminePreBlock(const int origin){
+bool DeterminePreBlock(const int origin, CBlock& block){
 
-    return forkPool.DeterminePreBlock(origin) ;
+    return  forkPool.DeterminePreBlock(origin, block) ;
 }
 
  bool DetermineIrreversibleList( CBlock preBlock, vector<CBlock>& newIrreversibleBlocks ){
@@ -43,12 +45,27 @@
         confirmMiners = 8 ;
     }
 
+
     for(const auto &block: tempBlocks){
-        if(minerMap.size() >=confirmMiners){
+        minerMap.erase(GetMinerAccountFromBlock(block)) ;
+        if(minerMap.size() >=confirmMiners ){
             newIrreversibleBlocks.insert(newIrreversibleBlocks.begin(),block) ;
-        } else{
-            minerMap.insert({GetMinerAccountFromBlock(block), 1}) ;
         }
+        minerMap.insert({GetMinerAccountFromBlock(block), 1}) ;
+    }
+
+    if(newIrreversibleBlocks.size() >0){
+
+        for(const auto &block: tempBlocks){
+            LogPrint("INFO","forkPool find irreblock from: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
+        }
+
+        for(const auto &block: newIrreversibleBlocks){
+            LogPrint("INFO","forkPool find irreblock ,that's: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
+        }
+
+
+
     }
 
     return true ;
@@ -59,7 +76,8 @@
 
  CBlockIndex* preBlockIndex(int origin){
 
-    CBlock preb = DeterminePreBlock(origin) ;
+    CBlock preb ;
+    DeterminePreBlock(origin,preb) ;
     CBlockIndex* idx =  new CBlockIndex(preb) ;
     auto hash = preb.GetHash() ;
     const uint256* pHash = &hash ;
@@ -76,7 +94,7 @@
  shared_ptr<CBlockIndex> preBlockIndex(int origin, CBlock& preb){
 
 
-    preb = DeterminePreBlock(origin) ;
+    DeterminePreBlock(origin, preb) ;
     shared_ptr<CBlockIndex> blockIndex =  std::make_shared<CBlockIndex>(preb) ;
     auto hash = preb.GetHash() ;
     const uint256* pHash = &hash ;

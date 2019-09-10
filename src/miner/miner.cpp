@@ -137,7 +137,7 @@ uint32_t GetElementForBurn(CBlock& block) {
 
 
 // Sort transactions by priority and fee to decide priority orders to process transactions.
-void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
+void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate, int32_t currHeight) {
     vecPriority.reserve(mempool.memPoolTxs.size());
     static double dPriority      = 0;
     static double dFeePerKb      = 0;
@@ -164,7 +164,7 @@ void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
 
     for (map<uint256, CTxMemPoolEntry>::iterator mi = mempool.memPoolTxs.begin(); mi != mempool.memPoolTxs.end(); ++mi) {
         CBaseTx *pBaseTx = mi->second.GetTransaction().get();
-        if (!pBaseTx->IsBlockRewardTx() && pCdMan->pTxCache->HaveTx(pBaseTx->GetHash()) == uint256()) {
+        if (!pBaseTx->IsBlockRewardTx() && pCdMan->pTxCache->HaveTx(pBaseTx->GetHash()) == uint256() && pBaseTx->IsValidHeight(currHeight ,SysCfg().GetTxCacheHeight())) {
             nTxSize   = mi->second.GetTxSize();
             feeSymbol = std::get<0>(mi->second.GetFees());
             nFees     = std::get<1>(mi->second.GetFees());
@@ -498,7 +498,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
         // Calculate && sort transactions from memory pool.
         vector<TxPriority> txPriorities;
-        GetPriorityTx(txPriorities, fuelRate);
+        GetPriorityTx(txPriorities, fuelRate, height);
         TxPriorityCompare comparer(false); // Priority by size first.
         make_heap(txPriorities.begin(), txPriorities.end(), comparer);
         LogPrint("MINER", "CreateNewBlockPreStableCoinRelease() : got %lu transaction(s) sorted by priority rules\n",
@@ -586,7 +586,9 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
         ((CBlockRewardTx *)pBlock->vptx[0].get())->reward_fees = reward;
 
         // Fill in header
-        pBlock->SetPrevBlockHash(DeterminePreBlock(4).GetHash());
+        CBlock previousBlock ;
+        DeterminePreBlock(4, previousBlock);
+        pBlock->SetPrevBlockHash(previousBlock.GetHash());
         pBlock->SetNonce(0);
         pBlock->SetHeight(height);
         pBlock->SetFuel(totalFuel);
@@ -666,7 +668,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
 
         // Calculate && sort transactions from memory pool.
         vector<TxPriority> txPriorities;
-        GetPriorityTx(txPriorities, fuelRate);
+        GetPriorityTx(txPriorities, fuelRate, height);
         TxPriorityCompare comparer(false); // Priority by size first.
         make_heap(txPriorities.begin(), txPriorities.end(), comparer);
         LogPrint("MINER", "CreateNewBlockStableCoinRelease() : got %lu transaction(s) sorted by priority rules\n",
@@ -792,7 +794,9 @@ bool CheckWork(CBlock *pBlock, CWallet &wallet) {
     // Found a solution
     {
         LOCK(cs_main);
-        if (pBlock->GetPrevBlockHash() != DeterminePreBlock(6).GetHash())
+        CBlock preBlock ;
+        DeterminePreBlock(6,preBlock) ;
+        if (pBlock->GetPrevBlockHash() != preBlock.GetHash())
             return ERRORMSG("CheckWork() : generated block is stale");
 
         // Process this block the same as if we received it from another node
@@ -816,7 +820,9 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         if (vNodes.empty() && SysCfg().NetworkID() != REGTEST_NET)
             return false;
 
-        if (preBlock.GetHash() != DeterminePreBlock(5).GetHash())
+        CBlock preBlock ;
+        DeterminePreBlock(5, preBlock) ;
+        if (preBlock.GetHash() != preBlock.GetHash())
             return false;
 
         // Take a sleep and check.
@@ -856,7 +862,9 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         int64_t lastTime;
         {
             LOCK2(cs_main, pWalletMain->cs_wallet);
-            if (uint32_t( DeterminePreBlock(100).GetHeight()+ 1) != pBlock->GetHeight())
+            CBlock preBlock ;
+            DeterminePreBlock(100, preBlock) ;
+            if (uint32_t( preBlock.GetHeight()+ 1) != pBlock->GetHeight())
                 return false;
 
             CKey acctKey;
@@ -958,7 +966,8 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
             int64_t lastTime        = GetTimeMillis();
             uint32_t txUpdated      = mempool.GetUpdatedTransactionNum();
 
-            CBlock preBlock = DeterminePreBlock(3) ;
+            CBlock preBlock ;
+            DeterminePreBlock(3, preBlock) ;
             CBlockIndex *pIndexPrev = new CBlockIndex(preBlock) ;
             int32_t blockHeight     = preBlock.GetHeight()+1 ;
 
