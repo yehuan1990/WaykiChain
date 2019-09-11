@@ -2147,7 +2147,7 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
         bool consensusResult = persistBlock(irrBlock,state, dbp);
         if(!consensusResult){
 
-            forkPool.onConsensusFailed(irrBlock);
+           // forkPool.onConsensusFailed(irrBlock);
             break ;
         }
 
@@ -2209,7 +2209,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
         height = int32_t(preBlock.GetHeight()+1) ;
 
-        if (block.GetHeight() != (uint32_t)height) {
+        if (int32_t(block.GetHeight()) != height) {
             return state.DoS(100, ERRORMSG("AcceptBlock() : height given in block mismatches with its actual height"),
                              REJECT_INVALID, "incorrect-height");
         }
@@ -2246,7 +2246,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     //}
 
 
-    if (block.GetHeight() > nSyncTipHeight)
+    if (int32_t(block.GetHeight()) > nSyncTipHeight)
         nSyncTipHeight = block.GetHeight();
 
     //add to fork pool
@@ -2383,9 +2383,8 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
     AssertLockHeld(cs_main);
     // Check for duplicate
     uint256 blockHash = pBlock->GetHash();
-    if (mapBlockIndex.count(blockHash))
-        return state.Invalid(ERRORMSG("ProcessBlock() : block exists: %d %s",
-                                      mapBlockIndex[blockHash]->height, blockHash.ToString()), 0, "duplicate");
+    if (forkPool.HasBlock(blockHash))
+        return state.Invalid(ERRORMSG("ProcessBlock() : block exists: %d %s",forkPool.blocks[blockHash].GetHeight(), blockHash.ToString()), 0, "duplicate");
 
     if (mapOrphanBlocks.count(blockHash))
         return state.Invalid(ERRORMSG("ProcessBlock() : block (orphan) exists %s", blockHash.ToString()), 0, "duplicate");
@@ -2393,7 +2392,7 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
     int64_t llBeginCheckBlockTime = GetTimeMillis();
     auto spCW = std::make_shared<CCacheWrapper>(pCdMan);
 
-    if(pBlock->GetHeight() <= chainActive.Tip()->height){
+    if(int32_t(pBlock->GetHeight()) <= chainActive.Tip()->height){
         return state.Invalid(ERRORMSG("ProcessBlock() : height is irreversible hash:%s, height:%d", blockHash.ToString(), pBlock->GetHeight()), 0, "duplicate");
     }
 
@@ -2418,12 +2417,6 @@ bool CheckBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock){
 bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBlockPos *dbp) {
 
 
-    if(pBlock->GetHeight() ==122){
-        cout<<"in"<<endl ;
-    }
-
-
-
     int64_t llBeginTime = GetTimeMillis();
     //check and validate the new Block
     if(!CheckBlock(state , pFrom, pBlock)){
@@ -2439,7 +2432,6 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
             LogPrint("DEBUG", "blockHeight=%d syncTipHeight=%d\n", pBlock->GetHeight(), nSyncTipHeight );
             nSyncTipHeight = pBlock->GetHeight();
         }
-
 
         // Accept orphans as long as there is a node to request its parents from
         if (pFrom) {
@@ -3617,8 +3609,10 @@ bool IsInitialBlockDownload() {
 
 bool GetTipBlock(CBlock& block){
 
+
     auto idx = chainActive.Tip() ;
     ReadBlockFromDisk(idx, block) ;
+    return true ;
 
 }
 

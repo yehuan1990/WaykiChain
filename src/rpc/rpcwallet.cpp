@@ -364,7 +364,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
     uint64_t coinAmount    = cmCoin.amount * CoinUnitTypeTable.at(cmCoin.unit);
     TokenSymbol feeSymbol  = cmFee.symbol;
     uint64_t fee           = cmFee.amount * CoinUnitTypeTable.at(cmFee.unit);
-    uint64_t totalAmount   = coinAmount;
+    uint64_t totalAmount = coinAmount;
     if (coinSymbol == feeSymbol) {
         totalAmount += fee;
     }
@@ -396,7 +396,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
     }
 
     string memo    = params.size() == 5 ? params[4].get_str() : "";
-    int32_t height = chainActive.Height();
+    int32_t height = forkPool.TipHeight();
     std::shared_ptr<CBaseTx> pBaseTx;
 
     if (GetFeatureForkVersion(height) == MAJOR_VER_R1) {
@@ -460,7 +460,7 @@ Value genmulsigtx(const Array& params, bool fHelp) {
     CKeyID recvKeyId;
     CUserID recvUserId;
     CRegID recvRegId;
-    int height = chainActive.Height();
+    int height = forkPool.TipHeight();
 
     if (!GetKeyId(params[1].get_str(), recvKeyId)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");

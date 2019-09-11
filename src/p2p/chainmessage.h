@@ -283,8 +283,8 @@ bool AlreadyHave(const CInv &inv) {
             return txInMap || mapOrphanTransactions.count(inv.hash);
         }
         case MSG_BLOCK:
-            return mapBlockIndex.count(inv.hash) ||
-                   mapOrphanBlocks.count(inv.hash);
+            return forkPool.HasBlock(inv.hash)||
+                   mapOrphanBlocks.count(inv.hash) || mapBlockIndex.count(inv.hash);
     }
     // Don't know what it is, just say we already got one
     return true;
@@ -737,12 +737,6 @@ inline bool ProcessGetDataMessage(CNode *pFrom, CDataStream &vRecv){
 }
 
 inline void ProcessBlockMessage(CNode *pFrom, CDataStream &vRecv){
-
-   /* srand((int)time(0)) ;
-    if(rand()%100 <2){
-        return;
-    }*/
-
 
     CBlock block;
     vRecv >> block;

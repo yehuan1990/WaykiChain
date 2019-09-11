@@ -8,9 +8,11 @@
 #include "main.h"
 #include "persistence/txdb.h"
 #include "tx/tx.h"
+#include "consensus/forkpool.h"
 
 using namespace std;
 
+extern CForkPool forkPool;
 CTxMemPoolEntry::CTxMemPoolEntry() {
     nTxSize   = 0;
     dPriority = 0.0;
@@ -100,7 +102,7 @@ bool CTxMemPool::CheckTxInMemPool(const uint256 &txid, const CTxMemPoolEntry &me
 
     // is it within valid height
     static int validHeight = SysCfg().GetTxCacheHeight();
-    if (!memPoolEntry.GetTransaction()->IsValidHeight(chainActive.Height(), validHeight)) {
+    if (!memPoolEntry.GetTransaction()->IsValidHeight(forkPool.TipHeight(), validHeight)) {
         return state.Invalid(ERRORMSG("CheckTxInMemPool() : txid: %s beyond the scope of valid height", txid.GetHex()),
                              REJECT_INVALID, "tx-invalid-height");
     }

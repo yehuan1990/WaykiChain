@@ -18,11 +18,14 @@
 #include "tx/merkletx.h"
 #include "tx/tx.h"
 #include "wallet/wallet.h"
+#include "consensus/forkpool.h"
 
 using namespace json_spirit;
 using namespace std;
 
 class CBaseCoinTransferTx;
+
+extern CForkPool forkPool;
 
 Object BlockToJSON(const CBlock& block, const CBlockIndex* pBlockIndex) {
     Object result;
@@ -393,7 +396,7 @@ void static CommonTxGenerator(const int64_t period, const int64_t batchSize) {
         boost::this_thread::interruption_point();
 
         int64_t nStart      = GetTimeMillis();
-        int32_t validHeight = chainActive.Height();
+        int32_t validHeight = forkPool.TipHeight();
 
         for (int64_t i = 0; i < batchSize; ++i) {
             CBaseCoinTransferTx tx;
@@ -532,7 +535,7 @@ void static ContractTxGenerator(const string& regid, const int64_t period, const
         boost::this_thread::interruption_point();
 
         int64_t nStart      = GetTimeMillis();
-        int32_t validHeight = chainActive.Height();
+        int32_t validHeight = forkPool.TipHeight();
 
         for (int64_t i = 0; i < batchSize; ++i) {
             CLuaContractInvokeTx tx;
