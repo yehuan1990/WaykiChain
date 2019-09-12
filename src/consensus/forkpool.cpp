@@ -92,15 +92,17 @@ bool CForkPool::AddBlock(CBlock &block) {
 
     LOCK(cs_forkpool) ;
 
-
     Init() ;
 
     if(block.GetPrevBlockHash() == tipBlock.GetHash()){
 
-        if(VerifyForkPoolBlock(&block,*spCW)){
+        auto spCW1 = std::make_shared<CCacheWrapper>(*spCW);
+        if(VerifyForkPoolBlock(&block,*spCW1)){
             tipBlock = block ;
+            spCW1->Flush() ;
             insertBlock(block) ;
         }
+
     }else{
 
         vector<CBlock> tempBlocks ;
@@ -115,10 +117,11 @@ bool CForkPool::AddBlock(CBlock &block) {
         if(tempBlock.GetPrevBlockHash() == chainActive.Tip() ->GetBlockHash()){
 
             auto activeTipCache = std::make_shared<CCacheWrapper>(pCdMan);
+
             reverse(tempBlocks.begin(), tempBlocks.end()) ;
             for(auto b: tempBlocks){
                 if(!VerifyForkPoolBlock(&b, *activeTipCache)){
-                    return false ;
+                    return ERRORMSG("VerifyForkPoolBlock ERRORERROR block.height=%d", block.GetHeight()) ;
                 }
             }
 

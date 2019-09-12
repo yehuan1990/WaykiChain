@@ -382,6 +382,9 @@ bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
 
     auto spCW = std::make_shared<CCacheWrapper>(cwIn);
 
+
+
+
     if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
         CBlock previousBlock;
         if (!findPreBlock(previousBlock, pBlock->GetPrevBlockHash()))
@@ -853,6 +856,8 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         CRegID regId;
         GetCurrentDelegate(currentTime, pBlock->GetHeight(), delegateList, regId);
         CAccount minerAcct;
+
+
         if (!cw.accountCache.GetAccount(regId, minerAcct)) {
             LogPrint("MINER", "MineBlock() : failed to get miner's account: %s\n", regId.ToString());
             return false;

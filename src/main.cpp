@@ -1354,7 +1354,6 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
     if (!cw.accountCache.GetAccount(block.vptx[0]->txUid, delegateAccount)) {
         assert(0);
     }
-
     // Verify reward values
     if (block.vptx[0]->nTxType == BLOCK_REWARD_TX) {
         auto pRewardTx        = (CBlockRewardTx *)block.vptx[0].get();
@@ -1370,11 +1369,11 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
         }
 
         // Verify profits
-        uint64_t profits = delegateAccount.ComputeBlockInflateInterest(block.GetHeight());
+      /*  uint64_t profits = delegateAccount.ComputeBlockInflateInterest(block.GetHeight());
         if (pRewardTx->inflated_bcoins != profits) {
             return state.DoS(100, ERRORMSG("ConnectBlock() : invalid coinbase profits amount(actual=%d vs valid=%d)",
-                             pRewardTx->inflated_bcoins, profits), REJECT_INVALID, "bad-reward-amount");
-        }
+                                           pRewardTx->inflated_bcoins, profits), REJECT_INVALID, "bad-reward-amount");
+        }*/
     }
 
     // Execute block reward transaction
@@ -1779,8 +1778,9 @@ bool ActivateBestChain(CValidationState &state) {
 bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos &pos) {
     // Check for duplicate
     uint256 hash = block.GetHash();
-    if (mapBlockIndex.count(hash))
-        return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");
+   // mapBlockIndex.erase(hash) ;
+    /*if (mapBlockIndex.count(hash) )
+        return state.Invalid(ERRORMSG("AddToBlockIndex() : %s already exists", hash.ToString()), 0, "duplicate");*/
 
     // Construct new block index object
     CBlockIndex *pIndexNew = new CBlockIndex(block);
@@ -2147,7 +2147,10 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
         bool consensusResult = persistBlock(irrBlock,state, dbp);
         if(!consensusResult){
 
-           // forkPool.onConsensusFailed(irrBlock);
+
+
+
+            forkPool.onConsensusFailed(irrBlock);
             break ;
         }
 
