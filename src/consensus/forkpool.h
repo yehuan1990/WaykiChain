@@ -24,10 +24,6 @@ static CCriticalSection cs_forkpool;
 extern bool GetTipBlock(CBlock& block) ;
 extern CCacheDBManager *pCdMan ;
 
-extern bool VerifyRewardTx(const CBlock *pBlock, CCacheWrapper &cwIn, bool bNeedRunTx) ;
-
-
-
 class CForkPool {
 
 private:
@@ -46,7 +42,7 @@ public:
 
 private:
 
-    bool insertBlock(CBlock& block){
+    bool InsertBlock(CBlock& block){
         blocks.insert({block.GetHash(), block});
         for( auto tx: block.vptx){
             if(!unCheckedTxHashes.count(tx->GetHash()))
@@ -74,7 +70,7 @@ public:
 
     bool DeterminePreBlock(const int origin, CBlock& block) ;
 
-    bool onConsensusFailed(CBlock& block) ;
+    bool OnConsensusFailed(CBlock& block) ;
     vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops );
 };
 

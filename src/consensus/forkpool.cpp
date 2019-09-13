@@ -50,7 +50,7 @@ bool CForkPool::IsInited() {
 
 }
 
-bool CForkPool::onConsensusFailed(CBlock& block){
+bool CForkPool::OnConsensusFailed(CBlock& block){
 
     LOCK(cs_forkpool) ;
 
@@ -94,16 +94,16 @@ bool CForkPool::AddBlock(CBlock &block) {
 
     Init() ;
 
-    if(block.GetPrevBlockHash() == tipBlock.GetHash()){
+  /*  if(block.GetPrevBlockHash() == tipBlock.GetHash()){
 
         auto spCW1 = std::make_shared<CCacheWrapper>(*spCW);
         if(VerifyForkPoolBlock(&block,*spCW1)){
             tipBlock = block ;
             spCW1->Flush() ;
-            insertBlock(block) ;
+            InsertBlock(block) ;
         }
 
-    }else{
+    }else{*/
 
         vector<CBlock> tempBlocks ;
         tempBlocks.push_back(block) ;
@@ -126,7 +126,7 @@ bool CForkPool::AddBlock(CBlock &block) {
             }
 
 
-            insertBlock(block) ;
+            InsertBlock(block) ;
             if(block.GetHeight()> tipBlock.GetHeight() || block.GetTime() < tipBlock.GetTime()){
 
                 tipBlock = block ;
@@ -137,7 +137,7 @@ bool CForkPool::AddBlock(CBlock &block) {
             LogPrint("INFO", "CForkPool::AddBlock() ERROR: find orphanBlock in forkPool, blockHash=%s,blockHeight =%d",block.GetHash().GetHex(), block.GetHeight()) ;
             return false ;
         }
-    }
+  //  }
 
     return true ;
 }

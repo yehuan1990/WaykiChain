@@ -193,7 +193,7 @@ bool CreateBlockRewardTx(const int64_t currentTime, const CAccount &delegate, CA
                          CBlock *pBlock) {
     CBlock previousBlock ;
     if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
-        if (!findPreBlock( previousBlock, pBlock->GetPrevBlockHash()))
+        if (!FindPreBlock( previousBlock, pBlock->GetPrevBlockHash()))
             return ERRORMSG("read block info fail from disk");
 
         CAccount prevDelegateAcct;
@@ -382,12 +382,9 @@ bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) {
 
     auto spCW = std::make_shared<CCacheWrapper>(cwIn);
 
-
-
-
     if (pBlock->GetHeight() != 1 || pBlock->GetPrevBlockHash() != SysCfg().GetGenesisBlockHash()) {
         CBlock previousBlock;
-        if (!findPreBlock(previousBlock, pBlock->GetPrevBlockHash()))
+        if (!FindPreBlock(previousBlock, pBlock->GetPrevBlockHash()))
             return ERRORMSG("VerifyForkPoolBlock() : read block info failed from disk");
 
         CAccount prevDelegateAcct;
@@ -488,7 +485,7 @@ std::unique_ptr<CBlock> CreateNewBlockPreStableCoinRelease(CCacheWrapper &cwIn) 
 
 
         CBlock preBlock ;
-        auto pIndexPrev =  preBlockIndex(10,preBlock) ;
+        auto pIndexPrev =  PreBlockIndex(10,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
 
         int32_t index           = 0; // block reward tx
@@ -625,7 +622,7 @@ std::unique_ptr<CBlock> CreateStableCoinGenesisBlock() {
 
 
         CBlock preBlock ;
-        auto pIndexPrev =  preBlockIndex(10,preBlock) ;
+        auto pIndexPrev =  PreBlockIndex(10,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
         uint32_t fuelRate       = GetElementForBurn(preBlock);
         pBlock->SetPrevBlockHash(preBlock.GetHash());
@@ -659,7 +656,7 @@ std::unique_ptr<CBlock> CreateNewBlockStableCoinRelease(CCacheWrapper &cwIn) {
         LOCK2(cs_main, mempool.cs);
 
         CBlock preBlock ;
-        auto pIndexPrev =  preBlockIndex(9,preBlock) ;
+        auto pIndexPrev =  PreBlockIndex(9,preBlock) ;
         int32_t height          = pIndexPrev->height + 1;
         int32_t index           = 1; // block reward tx
         uint32_t fuelRate       = GetElementForBurn(preBlock);
@@ -955,7 +952,7 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
                 // Busy-wait for the network to come online so we don't waste time mining
                 // on an obsolete chain. In regtest mode we expect to fly solo.
 
-                CBlockIndex* preBlock = preBlockIndex(7) ;
+                CBlockIndex* preBlock = PreBlockIndex(7) ;
                 while (vNodes.empty() || (preBlock && preBlock->height > 1 &&
                                           GetAdjustedTime() - preBlock->nTime > 60 * 60 &&
                                           !SysCfg().GetBoolArg("-genblockforce", false))) {

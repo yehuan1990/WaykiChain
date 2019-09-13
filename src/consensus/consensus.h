@@ -26,13 +26,13 @@ string GetMinerAccountFromBlock(CBlock block) ;
 bool DeterminePreBlock(const int origin, CBlock& preBlock) ;
 bool DetermineIrreversibleList( CBlock preBlock, vector<CBlock>& newIrreversibleBlocks ) ;
 
- CBlockIndex* preBlockIndex(int origin) ;
+ CBlockIndex* PreBlockIndex(int origin) ;
 
- shared_ptr<CBlockIndex> preBlockIndex(int origin, CBlock& preb) ;
+ shared_ptr<CBlockIndex> PreBlockIndex(int origin, CBlock& preb) ;
 
- bool  findPreBlock(CBlock& block, const uint256 preHash) ;
+ bool  FindPreBlock(CBlock& block, const uint256 preHash) ;
 
- bool findPreBlock(const uint256 preHash) ;
+ bool FindPreBlock(const uint256 preHash) ;
 
 
 #endif

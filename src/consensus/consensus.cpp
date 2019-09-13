@@ -74,7 +74,7 @@ bool DeterminePreBlock(const int origin, CBlock& block){
 
 
 
- CBlockIndex* preBlockIndex(int origin){
+ CBlockIndex* PreBlockIndex(int origin){
 
     CBlock preb ;
     DeterminePreBlock(origin,preb) ;
@@ -89,9 +89,7 @@ bool DeterminePreBlock(const int origin, CBlock& block){
     return idx ;
 }
 
-
-
- shared_ptr<CBlockIndex> preBlockIndex(int origin, CBlock& preb){
+ shared_ptr<CBlockIndex> PreBlockIndex(int origin, CBlock& preb){
 
 
     DeterminePreBlock(origin, preb) ;
@@ -107,7 +105,7 @@ bool DeterminePreBlock(const int origin, CBlock& block){
     return blockIndex ;
 }
 
- bool  findPreBlock(CBlock& block, const uint256 preHash){
+ bool  FindPreBlock(CBlock& block, const uint256 preHash){
 
     if(preHash == chainActive.Tip()->GetBlockHash()){
         auto idx = chainActive.Tip() ;
@@ -125,9 +123,9 @@ bool DeterminePreBlock(const int origin, CBlock& block){
 
 }
 
- bool findPreBlock(const uint256 preHash){
+ bool FindPreBlock(const uint256 preHash){
 
     CBlock b;
-    return findPreBlock(b, preHash);
+    return FindPreBlock(b, preHash);
 }
 

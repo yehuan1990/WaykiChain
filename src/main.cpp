@@ -1224,9 +1224,11 @@ bool ConnectBlock(CBlock &block, CCacheWrapper &cw, CBlockIndex *pIndex, CValida
         }
     }
 
+/*
     if (!VerifyRewardTx(&block, cw, false))
         return state.DoS(100, ERRORMSG("ConnectBlock() : the block hash=%s check pos tx error", block.GetHash().GetHex()),
                          REJECT_INVALID, "bad-pos-tx");
+*/
 
     CBlockUndo blockUndo;
     int64_t nStart = GetTimeMicros();
@@ -1815,7 +1817,7 @@ bool AddToBlockIndex(CBlock &block, CValidationState &state, const CDiskBlockPos
         return ERRORMSG("ConnectToChainActive Faild  blockHash==%s\n", pIndexNew->GetBlockHash().GetHex());
     }
 
-    LOCK(cs_main);
+ //   LOCK(cs_main);
 /*    if (pIndexNew == chainActive.Tip()) {
         // Clear fork warning if its no longer applicable
         CheckForkWarningConditions();
@@ -2146,11 +2148,7 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 
         bool consensusResult = persistBlock(irrBlock,state, dbp);
         if(!consensusResult){
-
-
-
-
-            forkPool.onConsensusFailed(irrBlock);
+            forkPool.OnConsensusFailed(irrBlock);
             break ;
         }
 
@@ -2172,8 +2170,6 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     if (mapBlockIndex.count(blockHash))
         return state.Invalid(ERRORMSG("AcceptBlock() : block already in mapBlockIndex"), 0, "duplicated");
 
-  //  assert(block.GetHeight() == 0  || block.GetPrevBlockHash() == chainActive.Tip()->GetBlockHash() || forkPool.HasBlock(block.GetPrevBlockHash()));
-
     if(block.GetHeight() <= chainActive.Height()){
         return state.Invalid(ERRORMSG("AcceptBlock() : block's height is loe chainActive's height"), 0, "duplicated");
     }
@@ -2192,7 +2188,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
 
 
     CBlock preBlock;
-    findPreBlock(preBlock, block.GetPrevBlockHash()) ;
+    FindPreBlock(preBlock, block.GetPrevBlockHash()) ;
     auto calcFuelRate = GetElementForBurn(preBlock) ;
     if (block.GetHeight() != 0 && block.GetFuelRate() != calcFuelRate){
 
@@ -2207,7 +2203,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
     if (block.GetHeight() != 0 || blockHash != SysCfg().GetGenesisBlockHash()) {
 
         CBlock preBlock ;
-        findPreBlock(preBlock, block.GetPrevBlockHash()) ;
+        FindPreBlock(preBlock, block.GetPrevBlockHash()) ;
 
 
         height = int32_t(preBlock.GetHeight()+1) ;
@@ -2430,7 +2426,7 @@ bool ProcessBlock(CValidationState &state, CNode *pFrom, CBlock *pBlock, CDiskBl
     uint256 blockHash = pBlock->GetHash();
 
     // If we don't already have its previous block, shunt it off to holding area until we get it
-    if (!pBlock->GetPrevBlockHash().IsNull() && !findPreBlock(pBlock->GetPrevBlockHash())) {
+    if (!pBlock->GetPrevBlockHash().IsNull() && !FindPreBlock(pBlock->GetPrevBlockHash())) {
         if (pBlock->GetHeight() > (uint32_t)nSyncTipHeight) {
             LogPrint("DEBUG", "blockHeight=%d syncTipHeight=%d\n", pBlock->GetHeight(), nSyncTipHeight );
             nSyncTipHeight = pBlock->GetHeight();
