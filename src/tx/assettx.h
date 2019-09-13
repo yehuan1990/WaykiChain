@@ -8,17 +8,20 @@
 
 #include "tx.h"
 
+Object AssetToJson(const CAccountDBCache &accountCache, const CAsset &asset);
+Object AssetToJson(const CAccountDBCache &accountCache, const CBaseAsset &asset);
+
 /**
  * Issue a new asset onto Chain
  */
 class CAssetIssueTx: public CBaseTx {
 public:
-    CAsset      asset;          // asset
+    CBaseAsset      asset;          // asset
 public:
     CAssetIssueTx() : CBaseTx(ASSET_ISSUE_TX) {};
 
     CAssetIssueTx(const CUserID &txUidIn, int32_t validHeightIn, const TokenSymbol &feeSymbol,
-                  uint64_t fees, const CAsset &assetIn)
+                  uint64_t fees, const CBaseAsset &assetIn)
         : CBaseTx(ASSET_ISSUE_TX, txUidIn, validHeightIn, feeSymbol, fees),
           asset(assetIn){}
 
@@ -75,14 +78,12 @@ public:
         string,  // name
         uint64_t // mint_amount
     > ValueType;
-
-    static const EnumTypeMap<UpdateType, string> ASSET_UPDATE_TYPE_NAMES;
 private:
     UpdateType type; // update type
     ValueType value; // update value
 
 public:
-    static shared_ptr<UpdateType> ParseUpdateType(const string& str);
+    static std::shared_ptr<UpdateType> ParseUpdateType(const string& str);
 
     static const string& GetUpdateTypeName(UpdateType type);
 public:
@@ -93,8 +94,6 @@ public:
     void Set(const string &name);
 
     void Set(const uint64_t &mintAmount);
-
-    const CUserID& GetOwnerUid() { return boost::get<CUserID>(value);}
 
     UpdateType GetType() const { return type; }
 
@@ -111,9 +110,9 @@ public:
 
     inline unsigned int GetSerializeSize(int serializedType, int nVersion) const {
         switch (type) {
-            case OWNER_UID:     return get<CUserID>().GetSerializeSize(serializedType, nVersion);
-            case NAME:          return ::GetSerializeSize(get<string>(), serializedType, nVersion);
-            case MINT_AMOUNT:   return ::GetSerializeSize(VARINT(get<uint64_t>()), serializedType, nVersion);
+            case OWNER_UID:     return sizeof(uint8_t) + get<CUserID>().GetSerializeSize(serializedType, nVersion);
+            case NAME:          return sizeof(uint8_t) + ::GetSerializeSize(get<string>(), serializedType, nVersion);
+            case MINT_AMOUNT:   return sizeof(uint8_t) + ::GetSerializeSize(VARINT(get<uint64_t>()), serializedType, nVersion);
             default: break;
         }
         return 0;
@@ -138,9 +137,9 @@ public:
         s >> ((uint8_t&)type);
         switch (type) {
             case OWNER_UID: {
-                CRegID regid;
-                s >> regid;
-                value = regid;
+                CUserID uid;
+                s >> uid;
+                value = uid;
                 break;
             }
             case NAME: {
@@ -164,9 +163,9 @@ public:
 
     string ValueToString() const;
 
-    string ToString() const;
+    string ToString(const CAccountDBCache &accountCache) const;
 
-    Object ToJson() const;
+    Object ToJson(const CAccountDBCache &accountCache) const;
 };
 
 /**

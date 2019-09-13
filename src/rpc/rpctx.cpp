@@ -17,16 +17,12 @@
 #include "config/configuration.h"
 #include "miner/miner.h"
 #include "main.h"
-#include "vm/luavm/luavmrunenv.h"
-
-#include <stdint.h>
 
 #include <boost/assign/list_of.hpp>
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_value.h"
 #include "json/json_spirit_reader.h"
 
-#include "boost/tuple/tuple.hpp"
 #define revert(height) ((height<<24) | (height << 8 & 0xff0000) |  (height>>8 & 0xff00) | (height >> 24))
 
 using namespace std;
@@ -51,7 +47,6 @@ Value gettxdetail(const Array& params, bool fHelp) {
     return GetTxDetailJSON(uint256S(params[0].get_str()));
 }
 
-//create a register account tx
 Value submitaccountregistertx(const Array& params, bool fHelp) {
     if (fHelp || params.size() == 0)
         throw runtime_error("submitaccountregistertx \"addr\" [\"fee\"]\n"
@@ -62,88 +57,105 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
             "\nResult:\n"
             "\"txid\":      (string) The transaction id.\n"
             "\nExamples:\n"
-            + HelpExampleCli("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\" 100000")
+            + HelpExampleCli("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\" 10000")
             + "\nAs json rpc call\n"
-            + HelpExampleRpc("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\", 100000"));
+            + HelpExampleRpc("submitaccountregistertx", "\"wTtCsc5X9S5XAy1oDuFiEAfEwf8bZHur1W\", 10000"));
 
-    string addr = params[0].get_str();
-    uint64_t fee = 0;
-    uint64_t nDefaultFee = SysCfg().GetTxFee();
-    if (params.size() > 1) {
-        fee = params[1].get_uint64();
-        if (fee < nDefaultFee) {
-            throw JSONRPCError(RPC_INSUFFICIENT_FEE,
-                               strprintf("Input fee smaller than mintxfee: %llu sawi", nDefaultFee));
-        }
-    } else {
-        fee = nDefaultFee;
+    RPCTypeCheck(params, list_of(str_type)(int_type));
+
+    EnsureWalletIsUnlocked();
+
+    const CUserID& txUid = RPC_PARAM::GetUserId(params[0], true);
+    int64_t fee          = RPC_PARAM::GetWiccFee(params, 1, ACCOUNT_REGISTER_TX);
+    int32_t validHegiht  = chainActive.Height();
+
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
+
+    if (account.HaveOwnerPubKey())
+        throw JSONRPCError(RPC_WALLET_ERROR, "Account was already registered");
+
+    assert(txUid.is<CPubKey>());
+
+    CPubKey pubkey;
+    if (!pWalletMain->GetPubKey(account.keyid, pubkey))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Key not found in local wallet");
+
+    CUserID minerUid = CNullID();
+    CPubKey minerPubKey;
+    if (pWalletMain->GetPubKey(account.keyid, minerPubKey, true) && minerPubKey.IsFullyValid()) {
+        minerUid = minerPubKey;
     }
 
-    CKeyID keyId;
-    if (!GetKeyId(addr, keyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Address invalid");
+    CAccountRegisterTx tx;
+    tx.txUid        = txUid;
+    tx.minerUid     = minerUid;
+    tx.llFees       = fee;
+    tx.valid_height = validHegiht;
 
-    CAccountRegisterTx rtx;
-    assert(pWalletMain != nullptr);
-    {
-        EnsureWalletIsUnlocked();
+    return SubmitTx(account.keyid, tx);
+}
 
-        CAccount account;
-        CUserID userId = keyId;
-        if (!pCdMan->pAccountCache->GetAccount(userId, account))
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account does not exist");
-
-
-        if (account.HaveOwnerPubKey())
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account was already registered");
-
-        uint64_t balance = account.GetToken(SYMB::WICC).free_amount;
-        if (balance < fee) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account balance is insufficient");
-        }
-
-        CPubKey pubkey;
-        if (!pWalletMain->GetPubKey(keyId, pubkey))
-            throw JSONRPCError(RPC_WALLET_ERROR, "Key not found in local wallet");
-
-        CPubKey minerPubKey;
-        if (pWalletMain->GetPubKey(keyId, minerPubKey, true) && minerPubKey.IsValid()) {
-            rtx.minerUid = minerPubKey;
-        } else {
-            rtx.minerUid = CNullID();
-        }
-        rtx.txUid        = pubkey;
-        rtx.llFees       = fee;
-        rtx.valid_height = chainActive.Height();
-
-        if (!pWalletMain->Sign(keyId, rtx.ComputeSignatureHash(), rtx.signature))
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed.");
+Value submitcontractdeploytx(const Array& params, bool fHelp) {
+    if (fHelp || params.size() < 3 || params.size() > 5) {
+        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"contract_memo\"]\n"
+            "\ncreate a transaction of registering a contract\n"
+            "\nArguments:\n"
+            "1.\"addr\":            (string, required) contract owner address from this wallet\n"
+            "2.\"filepath\":        (string, required) the file path of the app script\n"
+            "3.\"fee\":             (numeric, required) pay to miner (the larger the size of script, the bigger fees are required)\n"
+            "4.\"height\":          (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
+            "5.\"contract_memo\":   (string, optional) contract memo\n"
+            "\nResult:\n"
+            "\"txid\":              (string)\n"
+            "\nExamples:\n"
+            + HelpExampleCli("submitcontractdeploytx",
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 100000000 10000 \"Hello, WaykiChain!\"") +
+                "\nAs json rpc call\n"
+            + HelpExampleRpc("submitcontractdeploytx",
+                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 100000000, 10000, \"Hello, WaykiChain!\""));
     }
 
-    std::tuple<bool, string> ret;
-    ret = pWalletMain->CommitTx((CBaseTx *) &rtx);
-    if (!std::get<0>(ret))
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
+    RPCTypeCheck(params, list_of(str_type)(str_type)(int_type)(int_type)(str_type));
 
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-    return obj;
+    EnsureWalletIsUnlocked();
+
+    const CUserID& txUid  = RPC_PARAM::GetUserId(params[0], true);
+    string contractScript = RPC_PARAM::GetLuaContractScript(params[1]);
+    int64_t fee           = RPC_PARAM::GetWiccFee(params, 2, LCONTRACT_DEPLOY_TX);
+    int32_t validHegiht   = params.size() > 3 ? params[3].get_int() : chainActive.Height();
+    string memo           = params.size() > 4 ? params[4].get_str() : "";
+
+    if (memo.size() > MAX_CONTRACT_MEMO_SIZE)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Contract memo is too large");
+
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
+
+    CLuaContractDeployTx tx;
+    tx.txUid        = txUid;
+    tx.contract     = CLuaContract(contractScript, memo);
+    tx.llFees       = fee;
+    tx.nRunStep     = tx.contract.GetContractSize();
+    tx.valid_height = validHegiht;
+
+    return SubmitTx(account.keyid, tx);
 }
 
 Value submitcontractcalltx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 5 || params.size() > 6) {
         throw runtime_error(
-            "submitcontractcalltx \"sender addr\" \"app regid\" \"arguments\" \"amount\" \"fee\" [\"height\"]\n"
+            "submitcontractcalltx \"sender_addr\" \"contract_regid\" \"arguments\" \"amount\" \"fee\" [\"height\"]\n"
             "\ncreate contract invocation transaction\n"
             "\nArguments:\n"
-            "1.\"sender addr\": (string, required) tx sender's base58 addr\n"
-            "2.\"app regid\":   (string, required) contract RegId\n"
-            "3.\"arguments\":   (string, required) contract arguments (Hex encode required)\n"
-            "4.\"amount\":      (numeric, required) amount of WICC to be sent to the contract account\n"
-            "5.\"fee\":         (numeric, required) pay to miner\n"
-            "6.\"height\":      (numberic, optional) valid height\n"
+            "1.\"sender_addr\":     (string, required) tx sender's base58 addr\n"
+            "2.\"contract_regid\":  (string, required) contract regid\n"
+            "3.\"arguments\":       (string, required) contract arguments (Hex encode required)\n"
+            "4.\"amount\":          (numeric, required) amount of WICC to be sent to the contract account\n"
+            "5.\"fee\":             (numeric, required) pay to miner\n"
+            "6.\"height\":          (numberic, optional) valid height\n"
             "\nResult:\n"
-            "\"txid\":          (string)\n"
+            "\"txid\":              (string)\n"
             "\nExamples:\n" +
             HelpExampleCli("submitcontractcalltx",
                            "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\" \"100-1\" \"01020304\" 10000 10000 100") +
@@ -156,12 +168,16 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
 
     EnsureWalletIsUnlocked();
 
-    CKeyID sendKeyId, recvKeyId;
-    if (!GetKeyId(params[0].get_str(), sendKeyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
+    const CUserID& txUid  = RPC_PARAM::GetUserId(params[0], true);
+    const CUserID& appUid = RPC_PARAM::GetUserId(params[1]);
 
-    if (!GetKeyId(params[1].get_str(), recvKeyId)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid app regid");
+    CRegID appRegId;
+    if (!pCdMan->pAccountCache->GetRegId(appUid, appRegId)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid contract regid");
+    }
+
+    if (!pCdMan->pContractCache->HaveContract(appRegId)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract");
     }
 
     string arguments = ParseHexStr(params[2].get_str());
@@ -169,194 +185,26 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Arguments's size out of range");
     }
 
-    int64_t amount = AmountToRawValue(params[3]);
-    int64_t fee    = RPC_PARAM::GetWiccFee(params, 4, LCONTRACT_INVOKE_TX);
-    int32_t height = (params.size() > 5) ? params[5].get_int() : chainActive.Height();
+    int64_t amount      = AmountToRawValue(params[3]);
+    int64_t fee         = RPC_PARAM::GetWiccFee(params, 4, LCONTRACT_INVOKE_TX);
+    int32_t validHegiht = (params.size() > 5) ? params[5].get_int() : chainActive.Height();
 
-    CPubKey sendPubKey;
-    if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Key not found in the local wallet.");
-    }
-
-    CUserID sendUserId;
-    CRegID sendRegId;
-    sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
-            ? CUserID(sendRegId)
-            : CUserID(sendPubKey);
-
-    CRegID recvRegId;
-    if (!pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId)) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid app regid");
-    }
-
-    if (!pCdMan->pContractCache->HaveContract(recvRegId)) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to get contract");
-    }
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, amount);
+    RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
 
     CLuaContractInvokeTx tx;
     tx.nTxType      = LCONTRACT_INVOKE_TX;
-    tx.txUid        = sendUserId;
-    tx.app_uid      = recvRegId;
+    tx.txUid        = txUid;
+    tx.app_uid      = appUid;
     tx.coin_amount  = amount;
     tx.llFees       = fee;
     tx.arguments    = arguments;
-    tx.valid_height = height;
+    tx.valid_height = validHegiht;
 
-    if (!pWalletMain->Sign(sendKeyId, tx.ComputeSignatureHash(), tx.signature)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
-    }
-
-    std::tuple<bool, string> ret = pWalletMain->CommitTx((CBaseTx*)&tx);
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-    }
-
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-    return obj;
+    return SubmitTx(account.keyid, tx);
 }
 
-// register a contract app tx
-Value submitcontractdeploytx(const Array& params, bool fHelp) {
-    if (fHelp || params.size() < 3 || params.size() > 5) {
-        throw runtime_error("submitcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"contract_desc\"]\n"
-            "\ncreate a transaction of registering a contract app\n"
-            "\nArguments:\n"
-            "1.\"addr\":            (string, required) contract owner address from this wallet\n"
-            "2.\"filepath\":        (string, required) the file path of the app script\n"
-            "3.\"fee\":             (numeric, required) pay to miner (the larger the size of script, the bigger fees are required)\n"
-            "4.\"height\":          (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
-            "5.\"contract_desc\":   (string, optional) contract description\n"
-            "\nResult:\n"
-            "\"txid\":              (string)\n"
-            "\nExamples:\n"
-            + HelpExampleCli("submitcontractdeploytx",
-                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" 110000000 10000 \"Hello, WaykiChain!\"") +
-                "\nAs json rpc call\n"
-            + HelpExampleRpc("submitcontractdeploytx",
-                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", 110000000, 10000, \"Hello, WaykiChain!\""));
-    }
-
-    RPCTypeCheck(params, list_of(str_type)(str_type)(int_type)(int_type)(str_type));
-
-    string luaScriptFilePath = GetAbsolutePath(params[1].get_str()).string();
-    if (luaScriptFilePath.empty())
-        throw JSONRPCError(RPC_SCRIPT_FILEPATH_NOT_EXIST, "Lua Script file not exist!");
-
-    if (luaScriptFilePath.compare(0, LUA_CONTRACT_LOCATION_PREFIX.size(), LUA_CONTRACT_LOCATION_PREFIX.c_str()) != 0)
-        throw JSONRPCError(RPC_SCRIPT_FILEPATH_INVALID, "Lua Script file not inside /tmp/lua dir or its subdir!");
-
-    std::tuple<bool, string> result = CLuaVM::CheckScriptSyntax(luaScriptFilePath.c_str());
-    bool bOK = std::get<0>(result);
-    if (!bOK)
-        throw JSONRPCError(RPC_INVALID_PARAMETER, std::get<1>(result));
-
-    FILE* file = fopen(luaScriptFilePath.c_str(), "rb+");
-    if (!file)
-        throw runtime_error("submitcontractdeploytx open script file (" + luaScriptFilePath + ") error");
-
-    long lSize;
-    fseek(file, 0, SEEK_END);
-    lSize = ftell(file);
-    rewind(file);
-
-    if (lSize <= 0 || lSize > MAX_CONTRACT_CODE_SIZE) { // contract script file size must be <= 64 KB)
-        fclose(file);
-        throw JSONRPCError(
-            RPC_INVALID_PARAMETER,
-            (lSize == -1) ? "File size is unknown"
-                          : ((lSize == 0) ? "File is empty" : "File size exceeds 64 KB limit"));
-    }
-
-    // allocate memory to contain the whole file:
-    char *buffer = (char*) malloc(sizeof(char) * lSize);
-    if (buffer == nullptr) {
-        fclose(file);
-        throw runtime_error("allocate memory failed");
-    }
-    if (fread(buffer, 1, lSize, file) != (size_t) lSize) {
-        free(buffer);
-        fclose(file);
-        throw runtime_error("read script file error");
-    } else {
-        fclose(file);
-    }
-
-    CLuaContract luaContract;
-    luaContract.code.assign(buffer, lSize);
-
-    if (buffer)
-        free(buffer);
-
-    if (params.size() > 4) {
-        luaContract.memo = params[4].get_str();
-        if (luaContract.memo.size() > MAX_CONTRACT_MEMO_SIZE) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Contract description is too large");
-        }
-    }
-
-    uint64_t fee = params[2].get_uint64();
-    int32_t height   = params.size() > 3 ? params[3].get_int() : chainActive.Height();
-
-    if (fee > 0 && fee < CBaseTx::nMinTxFee) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Fee is smaller than nMinTxFee");
-    }
-    CKeyID keyId;
-    if (!GetKeyId(params[0].get_str(), keyId)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid send address");
-    }
-
-    assert(pWalletMain != nullptr);
-    CLuaContractDeployTx tx;
-    {
-        EnsureWalletIsUnlocked();
-
-        CAccount account;
-        if (!pCdMan->pAccountCache->GetAccount(keyId, account)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Invalid send address");
-        }
-
-        if (!account.HaveOwnerPubKey()) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account is unregistered");
-        }
-
-        uint64_t balance = account.GetToken(SYMB::WICC).free_amount;
-        if (balance < fee) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account balance is insufficient");
-        }
-
-        if (!pWalletMain->HaveKey(keyId)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Send address is not in wallet");
-        }
-
-        CRegID regId;
-        pCdMan->pAccountCache->GetRegId(keyId, regId);
-
-        tx.txUid          = regId;
-        tx.contract       = luaContract;
-        tx.llFees         = fee;
-        tx.nRunStep       = tx.contract.GetContractSize();
-        if (0 == height) {
-            height = chainActive.Height();
-        }
-        tx.valid_height = height;
-
-        if (!pWalletMain->Sign(keyId, tx.ComputeSignatureHash(), tx.signature)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
-        }
-
-        std::tuple<bool, string> ret;
-        ret = pWalletMain->CommitTx((CBaseTx*)&tx);
-        if (!std::get<0>(ret)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-        }
-        Object obj;
-        obj.push_back(Pair("txid", std::get<1>(ret)));
-        return obj;
-    }
-}
-
-//vote a delegate transaction
 Value submitdelegatevotetx(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 3 || params.size() > 4) {
         throw runtime_error(
@@ -391,102 +239,177 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
                            "[{\"delegate\":\"wNDue1jHcgRSioSDL4o1AzXz3D72gCMkP6\", "
                            "\"votes\":100000000}], 10000"));
     }
+
     RPCTypeCheck(params, list_of(str_type)(array_type)(int_type)(int_type));
 
-    string sendAddr = params[0].get_str();
-    uint64_t fee    = params[2].get_uint64();  // real type
-    int32_t height  = params.size() > 3 ? params[3].get_int() : chainActive.Height();
-    if (height < 0) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid height");
-    }
+    EnsureWalletIsUnlocked();
 
-    CKeyID sendKeyId;
-    if (!GetKeyId(sendAddr, sendKeyId)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid send address");
-    }
+    const CUserID& txUid = RPC_PARAM::GetUserId(params[0], true);
+    int64_t fee          = RPC_PARAM::GetWiccFee(params, 2, DELEGATE_VOTE_TX);
+    int32_t validHegiht  = params.size() > 3 ? params[3].get_int() : chainActive.Height();
+
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
+
     CDelegateVoteTx delegateVoteTx;
-    assert(pWalletMain != nullptr);
-    {
-        EnsureWalletIsUnlocked();
-        CAccount account;
+    delegateVoteTx.txUid        = txUid;
+    delegateVoteTx.llFees       = fee;
+    delegateVoteTx.valid_height = validHegiht;
 
-        if (!pCdMan->pAccountCache->GetAccount(sendKeyId, account)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account does not exist");
+    Array arrVotes = params[1].get_array();
+    for (auto objVote : arrVotes) {
+        const Value& delegateAddr  = find_value(objVote.get_obj(), "delegate");
+        const Value& delegateVotes = find_value(objVote.get_obj(), "votes");
+        if (delegateAddr.type() == null_type || delegateVotes == null_type) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Vote fund address error or fund value error");
+        }
+        CKeyID delegateKeyId;
+        if (!GetKeyId(delegateAddr.get_str(), delegateKeyId)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address error");
+        }
+        CAccount delegateAcct;
+        if (!pCdMan->pAccountCache->GetAccount(CUserID(delegateKeyId), delegateAcct)) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address is not exist");
+        }
+        if (!delegateAcct.HaveOwnerPubKey()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Delegate address is unregistered");
         }
 
-        CPubKey sendPubKey;
-        if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey))
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sender account not found in wallet");
+        VoteType voteType    = (delegateVotes.get_int64() > 0) ? VoteType::ADD_BCOIN : VoteType::MINUS_BCOIN;
+        CUserID candidateUid = CUserID(delegateAcct.regid);
+        uint64_t bcoins      = (uint64_t)abs(delegateVotes.get_int64());
 
-        CUserID sendUserId;
-        CRegID sendRegId;
-        sendUserId = (pCdMan->pAccountCache->GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
-                     ? CUserID(sendRegId)
-                     : CUserID(sendPubKey);
-
-        uint64_t balance = account.GetToken(SYMB::WICC).free_amount;
-        if (balance < fee) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Account balance is insufficient");
-        }
-
-        delegateVoteTx.txUid        = sendUserId;
-        delegateVoteTx.llFees       = fee;
-        delegateVoteTx.valid_height = height;
-
-        Array arrVotes = params[1].get_array();
-        for (auto objVote : arrVotes) {
-            const Value& delegateAddr  = find_value(objVote.get_obj(), "delegate");
-            const Value& delegateVotes = find_value(objVote.get_obj(), "votes");
-            if (delegateAddr.type() == null_type || delegateVotes == null_type) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Vote fund address error or fund value error");
-            }
-            CKeyID delegateKeyId;
-            if (!GetKeyId(delegateAddr.get_str(), delegateKeyId)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address error");
-            }
-            CAccount delegateAcct;
-            if (!pCdMan->pAccountCache->GetAccount(CUserID(delegateKeyId), delegateAcct)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address is not exist");
-            }
-            if (!delegateAcct.HaveOwnerPubKey()) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "Delegate address is unregistered");
-            }
-
-            VoteType voteType = (delegateVotes.get_int64() > 0) ? VoteType::ADD_BCOIN : VoteType::MINUS_BCOIN;
-            CUserID candidateUid = CUserID(delegateAcct.regid);
-            uint64_t bcoins = (uint64_t)abs(delegateVotes.get_int64());
-            CCandidateVote candidateVote(voteType, candidateUid, bcoins);
-
-            delegateVoteTx.candidateVotes.push_back(candidateVote);
-        }
-
-        if (!pWalletMain->Sign(sendKeyId, delegateVoteTx.ComputeSignatureHash(), delegateVoteTx.signature)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
-        }
+        CCandidateVote candidateVote(voteType, candidateUid, bcoins);
+        delegateVoteTx.candidateVotes.push_back(candidateVote);
     }
 
-    std::tuple<bool, string> ret;
-    ret = pWalletMain->CommitTx((CBaseTx*)&delegateVoteTx);
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
+    return SubmitTx(account.keyid, delegateVoteTx);
+}
+
+Value submituniversalcontractdeploytx(const Array& params, bool fHelp) {
+    if (fHelp || params.size() < 3 || params.size() > 5) {
+        throw runtime_error("submituniversalcontractdeploytx \"addr\" \"filepath\" \"fee\" [\"height\"] [\"contract_memo\"]\n"
+            "\ncreate a transaction of registering a universal contract\n"
+            "\nArguments:\n"
+            "1.\"addr\":            (string, required) contract owner address from this wallet\n"
+            "2.\"filepath\":        (string, required) the file path of the app script\n"
+            "3.\"symbol:fee:unit\": (symbol:amount:unit, required) fee paid to miner, default is WICC:100000000:sawi\n"
+            "4.\"height\":          (numeric, optional) valid height, when not specified, the tip block height in chainActive will be used\n"
+            "5.\"contract_memo\":   (string, optional) contract memo\n"
+            "\nResult:\n"
+            "\"txid\":              (string)\n"
+            "\nExamples:\n"
+            + HelpExampleCli("submituniversalcontractdeploytx",
+                "\"WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH\" \"/tmp/lua/myapp.lua\" \"WICC:100000000:sawi\" 10000 \"Hello, WaykiChain!\"") +
+                "\nAs json rpc call\n"
+            + HelpExampleRpc("submituniversalcontractdeploytx",
+                "WiZx6rrsBn9sHjwpvdwtMNNX2o31s3DEHH, \"/tmp/lua/myapp.lua\", \"WICC:100000000:sawi\", 10000, \"Hello, WaykiChain!\""));
     }
 
-    Object objRet;
-    objRet.push_back(Pair("txid", std::get<1>(ret)));
-    return objRet;
+    RPCTypeCheck(params, list_of(str_type)(str_type)(str_type)(int_type)(str_type));
+
+    EnsureWalletIsUnlocked();
+
+    const CUserID& txUid  = RPC_PARAM::GetUserId(params[0], true);
+    string contractScript = RPC_PARAM::GetLuaContractScript(params[1]); // TODO: support universal contract script
+    ComboMoney cmFee      = RPC_PARAM::GetFee(params, 2, UCONTRACT_DEPLOY_TX);
+    int32_t validHegiht   = params.size() > 3 ? params[3].get_int() : chainActive.Height();
+    string memo           = params.size() > 4 ? params[4].get_str() : "";
+
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
+
+    if (memo.size() > MAX_CONTRACT_MEMO_SIZE)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Contract memo is too large");
+
+    CUniversalContractDeployTx tx;
+    tx.txUid        = txUid;
+    tx.contract     = CUniversalContract(contractScript, memo);
+    tx.fee_symbol   = cmFee.symbol;
+    tx.llFees       = cmFee.GetSawiAmount();
+    tx.nRunStep     = tx.contract.GetContractSize();
+    tx.valid_height = validHegiht;
+
+    return SubmitTx(account.keyid, tx);
+}
+
+Value submituniversalcontractcalltx(const Array& params, bool fHelp) {
+    if (fHelp || params.size() < 5 || params.size() > 6) {
+        throw runtime_error(
+            "submituniversalcontractcalltx \"sender_addr\" \"contract_regid\" \"arguments\" \"amount\" \"fee\" "
+            "[\"height\"]\n"
+            "\ncreate contract invocation transaction\n"
+            "\nArguments:\n"
+            "1.\"sender_addr\":     (string, required) tx sender's base58 addr\n"
+            "2.\"contract_regid\":  (string, required) contract regid\n"
+            "3.\"arguments\":       (string, required) contract arguments (Hex encode required)\n"
+            "4.\"symbol:coin:unit\":(symbol:amount:unit, required) transferred coins\n"
+            "5.\"symbol:fee:unit\": (symbol:amount:unit, required) fee paid to miner, default is WICC:10000:sawi\n"
+            "6.\"height\":          (numberic, optional) valid height\n"
+            "\nResult:\n"
+            "\"txid\":              (string)\n"
+            "\nExamples:\n" +
+            HelpExampleCli("submituniversalcontractcalltx",
+                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\" \"100-1\" \"01020304\" \"WICC:10000:sawi\" "
+                           "\"WICC:10000:sawi\" 100") +
+            "\nAs json rpc call\n" +
+            HelpExampleRpc("submituniversalcontractcalltx",
+                           "\"wQWKaN4n7cr1HLqXY3eX65rdQMAL5R34k6\", \"100-1\", \"01020304\", \"WICC:10000:sawi\", "
+                           "\"WICC:10000:sawi\", 100"));
+    }
+
+    RPCTypeCheck(params, list_of(str_type)(str_type)(str_type)(str_type)(str_type)(int_type));
+
+    EnsureWalletIsUnlocked();
+
+    const CUserID& txUid  = RPC_PARAM::GetUserId(params[0], true);
+    const CUserID& appUid = RPC_PARAM::GetUserId(params[1]);
+
+    CRegID appRegId;
+    if (!pCdMan->pAccountCache->GetRegId(appUid, appRegId)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid contract regid");
+    }
+
+    if (!pCdMan->pContractCache->HaveContract(appRegId)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract");
+    }
+
+    string arguments = ParseHexStr(params[2].get_str());
+    if (arguments.size() >= MAX_CONTRACT_ARGUMENT_SIZE) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Arguments's size out of range");
+    }
+
+    ComboMoney cmCoin   = RPC_PARAM::GetComboMoney(params[3], SYMB::WICC);
+    ComboMoney cmFee    = RPC_PARAM::GetFee(params, 4, UCONTRACT_INVOKE_TX);
+    int32_t validHegiht = (params.size() > 5) ? params[5].get_int() : chainActive.Height();
+
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    RPC_PARAM::CheckAccountBalance(account, cmCoin.symbol, SUB_FREE, cmCoin.GetSawiAmount());
+    RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
+
+    CUniversalContractInvokeTx tx;
+    tx.nTxType      = UCONTRACT_INVOKE_TX;
+    tx.txUid        = txUid;
+    tx.app_uid      = appUid;
+    tx.coin_symbol  = cmCoin.symbol;
+    tx.coin_amount  = cmCoin.GetSawiAmount();
+    tx.fee_symbol   = cmFee.symbol;
+    tx.llFees       = cmFee.GetSawiAmount();
+    tx.arguments    = arguments;
+    tx.valid_height = validHegiht;
+
+    return SubmitTx(account.keyid, tx);
 }
 
 Value listaddr(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0) {
         throw runtime_error(
             "listaddr\n"
-            "\nreturn Array containing address,balance,haveminerkey,regid information.\n"
+            "\nreturn Array containing address, balance, haveminerkey, regid information.\n"
             "\nArguments:\n"
             "\nResult:\n"
-            "\nExamples:\n"
-            + HelpExampleCli("listaddr", "")
-            + "\nAs json rpc call\n"
-            + HelpExampleRpc("listaddr", ""));
+            "\nExamples:\n" +
+            HelpExampleCli("listaddr", "") + "\nAs json rpc call\n" + HelpExampleRpc("listaddr", ""));
     }
 
     Array retArray;
@@ -497,7 +420,6 @@ Value listaddr(const Array& params, bool fHelp) {
         if (setKeyId.size() == 0) {
             return retArray;
         }
-        CAccountDBCache accView(*pCdMan->pAccountCache);
 
         for (const auto &keyId : setKeyId) {
             CUserID userId(keyId);
@@ -697,13 +619,12 @@ static Value TestDisconnectBlock(int32_t number) {
     Object obj;
 
     CValidationState state;
-    if ((chainActive.Height() - number) < 0) {
-        throw JSONRPCError(RPC_INVALID_PARAMETER, "restclient Error: number");
+    if (number >= chainActive.Height()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid number");
     }
     if (number > 0) {
         do {
             CBlockIndex * pTipIndex = chainActive.Tip();
-            LogPrint("DEBUG", "current height:%d\n", pTipIndex->height);
             if (!DisconnectBlockFromTip(state))
                 return false;
             chainMostWork.SetTip(pTipIndex->pprev);
@@ -855,11 +776,12 @@ Value reloadtxcache(const Array& params, bool fHelp) {
     }
     pCdMan->pTxCache->Clear();
     CBlockIndex *pIndex = chainActive.Tip();
-    if ((chainActive.Height() - SysCfg().GetTxCacheHeight()) >= 0) {
+    if (chainActive.Height() - SysCfg().GetTxCacheHeight() >= 0) {
         pIndex = chainActive[(chainActive.Height() - SysCfg().GetTxCacheHeight())];
     } else {
         pIndex = chainActive.Genesis();
     }
+
     CBlock block;
     do {
         if (!ReadBlockFromDisk(pIndex, block))
@@ -963,7 +885,7 @@ Value submittxraw(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1) {
         throw runtime_error(
             "submittxraw \"rawtx\" \n"
-            "\nsubmit raw transaction\n"
+            "\nsubmit raw transaction (hex format)\n"
             "\nArguments:\n"
             "1.\"rawtx\":   (string, required) The raw transaction\n"
             "\nExamples:\n" +

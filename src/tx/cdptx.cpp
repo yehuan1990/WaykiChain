@@ -52,7 +52,7 @@ bool ComputeCDPInterest(const int32_t currBlockHeight, const uint32_t cdpLastBlo
 bool CCDPStakeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
     IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
-    IMPLEMENT_CHECK_TX_REGID(txUid.type());
+    IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (!kCDPCoinPairSet.count(std::pair<TokenSymbol, TokenSymbol>(bcoin_symbol, scoin_symbol))) {
         return state.DoS(100, ERRORMSG("CCDPStakeTx::CheckTx, invalid bcoin-scoin CDPCoinPair!"),
@@ -65,7 +65,9 @@ bool CCDPStakeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &s
                         txUid.ToString()), READ_ACCOUNT_FAIL, "bad-read-accountdb");
     }
 
-    IMPLEMENT_CHECK_TX_SIGNATURE(account.owner_pubkey);
+    CPubKey pubKey = (txUid.type() == typeid(CPubKey) ? txUid.get<CPubKey>() : account.owner_pubkey);
+    IMPLEMENT_CHECK_TX_SIGNATURE(pubKey);
+
     return true;
 }
 
@@ -115,6 +117,10 @@ bool CCDPStakeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CV
         return state.DoS(100, ERRORMSG("CCDPStakeTx::ExecuteTx, read txUid %s account info error",
                         txUid.ToString()), PRICE_FEED_FAIL, "bad-read-accountdb");
 
+    if (!GenerateRegID(account, cw, state, height, index)) {
+        return false;
+    }
+
     //1. pay miner fees (WICC)
     if (!account.OperateBalance(fee_symbol, BalanceOpType::SUB_FREE, llFees))
         return state.DoS(100, ERRORMSG("CCDPStakeTx::ExecuteTx, deduct fees from regId=%s failed,",
@@ -152,7 +158,7 @@ bool CCDPStakeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CV
                             READ_SYS_PARAM_FAIL, "read-min-coins-to-stake-error");
         }
 
-        uint64_t bcoinsToStakeAmountMin = bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / kPercentBoost);
+        uint64_t bcoinsToStakeAmountMin = bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / PRICE_BOOST);
         if (cdp.total_staked_bcoins < bcoinsToStakeAmountMin) {
             return state.DoS(100, ERRORMSG("CCDPStakeTx::ExecuteTx, total staked bcoins (%llu vs %llu) is too small",
                         cdp.total_staked_bcoins, bcoinsToStakeAmountMin), REJECT_INVALID, "total-staked-bcoins-too-small");
@@ -253,6 +259,7 @@ Object CCDPStakeTx::ToJson(const CAccountDBCache &accountCache) const {
     result.push_back(Pair("scoin_symbol",       scoin_symbol));
     result.push_back(Pair("bcoins_to_stake",    bcoins_to_stake));
     result.push_back(Pair("scoins_to_mint",     scoins_to_mint));
+
     return result;
 }
 
@@ -293,7 +300,7 @@ bool CCDPStakeTx::SellInterestForFcoins(const CTxCord &txCord, const CUserCDP &c
 bool CCDPRedeemTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
     IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
-    IMPLEMENT_CHECK_TX_REGID(txUid.type());
+    IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     CAccount account;
     if (!cw.accountCache.GetAccount(txUid, account)) {
@@ -306,7 +313,9 @@ bool CCDPRedeemTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
                         REJECT_INVALID, "empty-cdpid");
     }
 
-    IMPLEMENT_CHECK_TX_SIGNATURE(account.owner_pubkey);
+    CPubKey pubKey = (txUid.type() == typeid(CPubKey) ? txUid.get<CPubKey>() : account.owner_pubkey);
+    IMPLEMENT_CHECK_TX_SIGNATURE(pubKey);
+
     return true;
 }
 
@@ -316,6 +325,10 @@ bool CCDPRedeemTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
     if (!cw.accountCache.GetAccount(txUid, account)) {
         return state.DoS(100, ERRORMSG("CCDPRedeemTx::ExecuteTx, read txUid %s account info error",
                         txUid.ToString()), READ_ACCOUNT_FAIL, "bad-read-accountdb");
+    }
+
+    if (!GenerateRegID(account, cw, state, height, index)) {
+        return false;
     }
 
     CUserCDP cdp;
@@ -417,7 +430,7 @@ bool CCDPRedeemTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
             uint64_t collateralRatio  = cdp.ComputeCollateralRatio(bcoinMedianPrice);
             if (collateralRatio < startingCdpCollateralRatio) {
                 return state.DoS(100, ERRORMSG("CCDPRedeemTx::ExecuteTx, the cdp collatera ratio=%.2f%% cannot < %.2f%% after redeem",
-                                100.0 * collateralRatio / (double)kPercentBoost, 100.0 * startingCdpCollateralRatio / (double)kPercentBoost),
+                                100.0 * collateralRatio / (double)RATIO_BOOST, 100.0 * startingCdpCollateralRatio / (double)RATIO_BOOST),
                                 UPDATE_CDP_FAIL, "invalid-collatera-ratio");
             }
 
@@ -428,7 +441,7 @@ bool CCDPRedeemTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, C
             }
 
             uint64_t bcoinsToStakeAmountMin =
-                bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / kPercentBoost);
+                bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / PRICE_BOOST);
             if (cdp.total_staked_bcoins < bcoinsToStakeAmountMin) {
                 return state.DoS(100, ERRORMSG("CCDPRedeemTx::ExecuteTx, total staked bcoins (%llu vs %llu) is too small",
                                  cdp.total_staked_bcoins, bcoinsToStakeAmountMin), REJECT_INVALID, "total-staked-bcoins-too-small");
@@ -522,7 +535,7 @@ bool CCDPRedeemTx::SellInterestForFcoins(const CTxCord &txCord, const CUserCDP &
  bool CCDPLiquidateTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &state) {
     IMPLEMENT_DISABLE_TX_PRE_STABLE_COIN_RELEASE;
     IMPLEMENT_CHECK_TX_FEE;
-    IMPLEMENT_CHECK_TX_REGID(txUid.type());
+    IMPLEMENT_CHECK_TX_REGID_OR_PUBKEY(txUid.type());
 
     if (scoins_to_liquidate == 0) {
         return state.DoS(100, ERRORMSG("CCDPLiquidateTx::CheckTx, invalid liquidate amount(0)"), REJECT_INVALID,
@@ -538,7 +551,8 @@ bool CCDPRedeemTx::SellInterestForFcoins(const CTxCord &txCord, const CUserCDP &
         return state.DoS(100, ERRORMSG("CdpLiquidateTx::CheckTx, read txUid %s account info error", txUid.ToString()),
                          READ_ACCOUNT_FAIL, "bad-read-accountdb");
 
-    IMPLEMENT_CHECK_TX_SIGNATURE(account.owner_pubkey);
+    CPubKey pubKey = (txUid.type() == typeid(CPubKey) ? txUid.get<CPubKey>() : account.owner_pubkey);
+    IMPLEMENT_CHECK_TX_SIGNATURE(pubKey);
 
     return true;
 }
@@ -565,6 +579,10 @@ bool CCDPLiquidateTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw
     if (!cw.accountCache.GetAccount(txUid, account)) {
         return state.DoS(100, ERRORMSG("CCDPLiquidateTx::ExecuteTx, read txUid %s account info error",
                         txUid.ToString()), READ_ACCOUNT_FAIL, "bad-read-accountdb");
+    }
+
+    if (!GenerateRegID(account, cw, state, height, index)) {
+        return false;
     }
 
     CUserCDP cdp;
@@ -660,16 +678,16 @@ bool CCDPLiquidateTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw
 
         totalBcoinsToCdpOwner = cdp.total_staked_bcoins - totalBcoinsToReturnLiquidator;
 
-        totalScoinsToLiquidate = ( cdp.total_owed_scoins * (double)nonReturnCdpLiquidateRatio / kPercentBoost )
-                                * (double)cdpLiquidateDiscountRate / kPercentBoost; //1.096N
+        totalScoinsToLiquidate = ( cdp.total_owed_scoins * (double)nonReturnCdpLiquidateRatio / RATIO_BOOST )
+                                * (double)cdpLiquidateDiscountRate / RATIO_BOOST; //1.096N
 
         totalScoinsToReturnSysFund = totalScoinsToLiquidate - cdp.total_owed_scoins;
 
     } else if (collateralRatio > forcedCdpLiquidateRatio) {    // 1.04 ~ 1.13
         totalBcoinsToReturnLiquidator = cdp.total_staked_bcoins; //M
         totalBcoinsToCdpOwner = 0;
-        totalScoinsToLiquidate = totalBcoinsToReturnLiquidator * ((double) bcoinMedianPrice / kPercentBoost)
-                                * cdpLiquidateDiscountRate / kPercentBoost; //M * 97%
+        totalScoinsToLiquidate = totalBcoinsToReturnLiquidator * ((double) bcoinMedianPrice / PRICE_BOOST)
+                                * cdpLiquidateDiscountRate / RATIO_BOOST; //M * 97%
 
         totalScoinsToReturnSysFund = totalScoinsToLiquidate - cdp.total_owed_scoins; // M * 97% - N
 
@@ -748,7 +766,7 @@ bool CCDPLiquidateTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw
                              READ_SYS_PARAM_FAIL, "read-min-coins-to-stake-error");
         }
 
-        uint64_t bcoinsToStakeAmountMin = bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / kPercentBoost);
+        uint64_t bcoinsToStakeAmountMin = bcoinsToStakeAmountMinInScoin / (double(bcoinMedianPrice) / PRICE_BOOST);
         if (cdp.total_staked_bcoins < bcoinsToStakeAmountMin) {
             return state.DoS(100, ERRORMSG("CCDPLiquidateTx::ExecuteTx, total staked bcoins (%llu vs %llu) is too small",
                             cdp.total_staked_bcoins, bcoinsToStakeAmountMin), REJECT_INVALID, "total-staked-bcoins-too-small");

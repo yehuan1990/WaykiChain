@@ -19,10 +19,6 @@
 #include <algorithm>
 #include <boost/circular_buffer.hpp>
 
-
-                                                                                                   \
-
-
 extern CWallet *pWalletMain;
 extern void SetMinerStatus(bool bStatus);
 //////////////////////////////////////////////////////////////////////////////
@@ -90,9 +86,8 @@ void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
     pCdMan->pSysParamCache->GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
     int32_t height = chainActive.Height();
     // fee symbol should be WICC or WUSD only.
-    uint64_t scoinMedianPrice = 10000;  // boosted by 10^4
-    uint64_t bcoinMedianPrice =
-        pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
+    uint64_t scoinMedianPrice = 1 * PRICE_BOOST;
+    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     auto GetFeeMedianPrice = [&](const TokenSymbol &symbol) -> uint64_t {
         if (symbol == SYMB::WICC)
@@ -109,7 +104,7 @@ void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
             nTxSize   = mi->second.GetTxSize();
             feeSymbol = std::get<0>(mi->second.GetFees());
             nFees     = std::get<1>(mi->second.GetFees());
-            dFeePerKb = double(GetFeeMedianPrice(feeSymbol)) / kPercentBoost * (nFees - pBaseTx->GetFuel(nFuelRate)) /
+            dFeePerKb = (double(GetFeeMedianPrice(feeSymbol)) / PRICE_BOOST) * (nFees - pBaseTx->GetFuel(nFuelRate)) /
                         (nTxSize / 1000.0);
             LogPrint("MINER", "GetPriority, medianPrice: %llu, nFees: %llu, fuel: %llu, nTxSize: %u\n",
                      GetFeeMedianPrice(feeSymbol), nFees, pBaseTx->GetFuel(nFuelRate), nTxSize);
@@ -120,12 +115,11 @@ void GetPriorityTx(vector<TxPriority> &vecPriority, const int32_t nFuelRate) {
 }
 
 static bool GetCurrentDelegate(const int64_t currentTime, const int32_t currHeight, const vector<CRegID> &delegateList,
-                        CRegID &delegate) {
+                               CRegID &delegate) {
     uint32_t slot  = currentTime / GetBlockInterval(currHeight);
-    uint32_t miner = slot % IniCfg().GetTotalDelegateNum();
-    delegate       = delegateList[miner];
-    LogPrint("DEBUG", "currentTime=%lld, slot=%d, miner=%d, regId=%s\n", currentTime, slot, miner,
-             delegate.ToString());
+    uint32_t index = slot % IniCfg().GetTotalDelegateNum();
+    delegate       = delegateList[index];
+    LogPrint("DEBUG", "currentTime=%lld, slot=%d, index=%d, regId=%s\n", currentTime, slot, index, delegate.ToString());
 
     return true;
 }

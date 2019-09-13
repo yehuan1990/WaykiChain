@@ -5,11 +5,16 @@
 #include "rpccommons.h"
 
 #include "entities/key.h"
+#include "init.h"
 #include "main.h"
+#include "rpcserver.h"
+#include "vm/luavm/luavmrunenv.h"
 #include "wallet/wallet.h"
 #include "wallet/walletdb.h"
-#include "init.h"
-#include "rpcserver.h"
+
+#include <fstream>
+
+using namespace std;
 
 /*
 std::string split implementation by using delimeter as a character.
@@ -168,41 +173,23 @@ bool ParseRpcInputMoney(const string &comboMoneyStr, ComboMoney &comboMoney, con
     return true;
 }
 
-Object SubmitTx(const CUserID &userId, CBaseTx &tx) {
-
-    CAccount account;
-    if (!pCdMan->pAccountCache->GetAccount(userId, account) || !account.HaveOwnerPubKey()) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Account is unregistered");
+Object SubmitTx(const CKeyID &keyid, CBaseTx &tx) {
+    if (!pWalletMain->HaveKey(keyid)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Sender address not found in wallet");
     }
 
-    CKeyID keyId;
-    if (!pCdMan->pAccountCache->GetKeyId(userId, keyId)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, "Failed to acquire key id");
+    if (!pWalletMain->Sign(keyid, tx.ComputeSignatureHash(), tx.signature)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
     }
 
-    CRegID regId;
-    pCdMan->pAccountCache->GetRegId(userId, regId);
-    tx.txUid = regId;
-
-    assert(pWalletMain != nullptr);
-    {
-        EnsureWalletIsUnlocked();
-        if (!pWalletMain->HaveKey(keyId)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sender address not found in wallet");
-        }
-        if (!pWalletMain->Sign(keyId, tx.ComputeSignatureHash(), tx.signature)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
-        }
-
-        std::tuple<bool, string> ret = pWalletMain->CommitTx((CBaseTx*)&tx);
-        if (!std::get<0>(ret)) {
-            throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-        }
-
-        Object obj;
-        obj.push_back(Pair("txid", std::get<1>(ret)));
-        return obj;
+    std::tuple<bool, string> ret = pWalletMain->CommitTx((CBaseTx *)&tx);
+    if (!std::get<0>(ret)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
     }
+
+    Object obj;
+    obj.push_back(Pair("txid", std::get<1>(ret)));
+    return obj;
 }
 
 string RegIDToAddress(CUserID &userId) {
@@ -342,7 +329,7 @@ ComboMoney RPC_PARAM::GetComboMoney(const Value &jsonValue,
     return money;
 }
 
-ComboMoney RPC_PARAM::GetFee(const Array& params, size_t index, TxType txType) {
+ComboMoney RPC_PARAM::GetFee(const Array& params, const size_t index, const TxType txType) {
     ComboMoney fee;
     if (params.size() > index) {
         fee = GetComboMoney(params[index], SYMB::WICC);
@@ -370,7 +357,7 @@ ComboMoney RPC_PARAM::GetFee(const Array& params, size_t index, TxType txType) {
     return fee;
 }
 
-uint64_t RPC_PARAM::GetWiccFee(const Array& params, size_t index, TxType txType) {
+uint64_t RPC_PARAM::GetWiccFee(const Array& params, const size_t index, const TxType txType) {
     uint64_t fee, minFee;
     if (!GetTxMinFee(txType, chainActive.Height(), SYMB::WICC, minFee))
         throw JSONRPCError(RPC_INVALID_PARAMS,
@@ -387,22 +374,96 @@ uint64_t RPC_PARAM::GetWiccFee(const Array& params, size_t index, TxType txType)
     return fee;
 }
 
-
-CUserID RPC_PARAM::GetUserId(const Value &jsonValue) {
+CUserID RPC_PARAM::GetUserId(const Value &jsonValue, const bool senderUid) {
     auto pUserId = CUserID::ParseUserId(jsonValue.get_str());
     if (!pUserId) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid addr");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
-    return *pUserId;
+
+    /**
+     * We need to choose the proper field as the sender/receiver's account according to
+     * the two factor: whether the sender's account is registered or not, whether the
+     * RegID is mature or not.
+     *
+     * |-------------------------------|-------------------|-------------------|
+     * |                               |      SENDER       |      RECEIVER     |
+     * |-------------------------------|-------------------|-------------------|
+     * | NOT registered                |     Public Key    |      Key ID       |
+     * |-------------------------------|-------------------|-------------------|
+     * | registered BUT immature       |     Public Key    |      Key ID       |
+     * |-------------------------------|-------------------|-------------------|
+     * | registered AND mature         |     Reg ID        |      Reg ID       |
+     * |-------------------------------|-------------------|-------------------|
+     */
+    CRegID regid;
+    if (pCdMan->pAccountCache->GetRegId(*pUserId, regid) && regid.IsMature(chainActive.Height())) {
+        return CUserID(regid);
+    } else {
+        if (senderUid && pUserId->is<CKeyID>()) {
+            CPubKey sendPubKey;
+            if (!pWalletMain->GetPubKey(pUserId->get<CKeyID>(), sendPubKey) || !sendPubKey.IsFullyValid())
+                throw JSONRPCError(RPC_WALLET_ERROR, "Key not found in the local wallet");
+
+            return CUserID(sendPubKey);
+        } else {
+            return *pUserId;
+        }
+    }
 }
 
+string RPC_PARAM::GetLuaContractScript(const Value &jsonValue) {
+    string filePath = GetAbsolutePath(jsonValue.get_str()).string();
+    if (filePath.empty())
+        throw JSONRPCError(RPC_SCRIPT_FILEPATH_NOT_EXIST, "Lua Script file not exist");
+
+    if (filePath.compare(0, LUA_CONTRACT_LOCATION_PREFIX.size(), LUA_CONTRACT_LOCATION_PREFIX.c_str()) != 0)
+        throw JSONRPCError(RPC_SCRIPT_FILEPATH_INVALID, "Lua Script file not inside /tmp/lua dir or its subdir");
+
+    std::tuple<bool, string> result = CLuaVM::CheckScriptSyntax(filePath.c_str());
+    if (!std::get<0>(result))
+        throw JSONRPCError(RPC_INVALID_PARAMETER, std::get<1>(result));
+
+    bool success = false;
+    string contractScript;
+    do {
+        streampos begin, end;
+        ifstream fin(filePath.c_str(), ios::binary | ios::in);
+        if (!fin)
+            break;
+
+        begin = fin.tellg();
+        fin.seekg(0, ios::end);
+        end = fin.tellg();
+
+        streampos length = end - begin;
+        if (length == 0 || length > MAX_CONTRACT_CODE_SIZE) {
+            fin.close();
+            break;
+        }
+
+        fin.seekg(0, ios::beg);
+        char *buffer = new char[length];
+        fin.read(buffer, length);
+
+        contractScript.assign(buffer, length);
+        free(buffer);
+        fin.close();
+
+        success = true;
+    } while (false);
+
+    if (!success)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract script");
+
+    return contractScript;
+}
 
 uint64_t RPC_PARAM::GetPrice(const Value &jsonValue) {
     // TODO: check price range??
     return AmountToRawValue(jsonValue);
 }
 
-uint256 RPC_PARAM::GetTxid(const Value &jsonValue, const string &paramName, bool canBeEmpty) {
+uint256 RPC_PARAM::GetTxid(const Value &jsonValue, const string &paramName, const bool canBeEmpty) {
     string binStr, errStr;
     if (!ParseHex(jsonValue.get_str(), binStr, errStr))
         throw JSONRPCError(RPC_INVALID_PARAMS, strprintf("Get param %s error! %s", paramName, errStr));
@@ -436,7 +497,7 @@ TokenSymbol RPC_PARAM::GetOrderCoinSymbol(const Value &jsonValue) {
 }
 
 TokenSymbol RPC_PARAM::GetOrderAssetSymbol(const Value &jsonValue) {
-    // TODO: check asset symbol for oders
+    // TODO: check asset symbol for orders
     return jsonValue.get_str();
 }
 
@@ -465,8 +526,8 @@ string RPC_PARAM::GetBinStrFromHex(const Value &jsonValue, const string &paramNa
     return binStr;
 }
 
-void RPC_PARAM::CheckAccountBalance(CAccount &account, const TokenSymbol &tokenSymbol,
-                                    const BalanceOpType opType, const uint64_t &value) {
+void RPC_PARAM::CheckAccountBalance(CAccount &account, const TokenSymbol &tokenSymbol, const BalanceOpType opType,
+                                    const uint64_t value) {
     if (!account.OperateBalance(tokenSymbol, opType, value))
         throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS,
                            strprintf("Account does not have enough %s", tokenSymbol));

@@ -154,6 +154,10 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "submitcontractcalltx"         && n > 4) ConvertTo<int64_t>(params[4]);
     if (strMethod == "submitcontractcalltx"         && n > 5) ConvertTo<int32_t>(params[5]);
 
+    if (strMethod == "submituniversalcontractdeploytx"  && n > 3) ConvertTo<int32_t>(params[3]);
+
+    if (strMethod == "submituniversalcontractcalltx"    && n > 5) ConvertTo<int32_t>(params[5]);
+
     if (strMethod == "listaddr"               && n > 1) ConvertTo<bool>(params[1]);
     if (strMethod == "disconnectblock"        && n > 0) ConvertTo<int32_t>(params[0]);
 
@@ -161,8 +165,8 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "getblock"               && n > 0) { if (params[0].get_str().size()<32) ConvertTo<int32_t>(params[0]);}
 
     /****** generate a digitally signed raw transaction for network submission via submittxraw  **********/
-    if (strMethod == "genmulsigtx"            && n > 2) ConvertTo<double>(params[2]);
-    if (strMethod == "genmulsigtx"            && n > 3) ConvertTo<double>(params[3]);
+    if (strMethod == "genmulsigtx"            && n > 2) ConvertTo<int64_t>(params[2]);
+    if (strMethod == "genmulsigtx"            && n > 3) ConvertTo<int64_t>(params[3]);
     if (strMethod == "genmulsigtx"            && n > 4) ConvertTo<int32_t>(params[4]);
 
     /********************************************************************************************************************/
@@ -205,7 +209,7 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     /* for cdp */
     if (strMethod == "submitpricefeedtx"        && n > 1) ConvertTo<Array>(params[1]);
 
-    if (strMethod == "submitfcoinstaketx"       && n > 1) ConvertTo<int64_t>(params[1]);
+    if (strMethod == "submitcoinstaketx"       && n > 1) ConvertTo<int64_t>(params[1]);
 
     if (strMethod == "submitcdpredeemtx"        && n > 2) ConvertTo<int64_t>(params[2]);
     if (strMethod == "submitcdpredeemtx"        && n > 3) ConvertTo<int64_t>(params[3]);
@@ -216,7 +220,7 @@ Array RPCConvertValues(const string &strMethod, const vector<string> &strParams)
     if (strMethod == "submitassetissuetx"       && n > 5) ConvertTo<bool>(params[5]);
 
     /* vm functions work in vm simulator */
-    if (strMethod == "vmexecutescript"          && n > 3) ConvertTo<uint64_t>(params[3]);
+    if (strMethod == "vmexecutescript"          && n > 3) ConvertTo<int64_t>(params[3]);
 
     return params;
 }
