@@ -11,11 +11,14 @@
 #include <string>
 #include <cstdint>
 #include <tuple>
+#include "const.h"
 
 using namespace std;
 
-static const uint16_t kPercentBoost                         = 10000;
-static const uint64_t kTotalFundCoinGenesisReleaseAmount    = 19950000000; // 21 * 95% billion = WGRT
+static const uint16_t RATIO_BOOST                           = 10000;
+static const uint32_t PRICE_BOOST                           = 100000000;
+static const uint64_t kFundCoinGenesisTotalReleaseAmount    = 19950000000;  // 21 * 95% billion WGRT
+static const uint32_t kFundCoinGenesisInitialReserveAmount  = 2100000;      // 2.1 million WUSD
 
 static const uint16_t kFcoinGenesisIssueTxIndex             = 1;
 static const uint16_t kFcoinGenesisRegisterTxIndex          = 2;
@@ -29,10 +32,12 @@ static const double kPriceFeedTransactionPriority           = 10000.0;
 
 static const uint64_t ASSET_RISK_FEE_RATIO = 4000; // 40% * 10000, the ratio of asset fee into the risk riserve
 
+static const uint64_t MIN_DEX_ORDER_AMOUNT = 0.1 * COIN; // 0.9 COINS,the min amount of dex order limit.
+
 enum SysParamType : uint8_t {
     NULL_SYS_PARAM_TYPE                     = 0,
     MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT    = 1,
-    PRICE_FEED_FCOIN_STAKE_AMOUNT_MIN       = 2,
+    PRICE_FEED_BCOIN_VOTE_AMOUNT_MIN        = 2,
     PRICE_FEED_CONTINUOUS_DEVIATE_TIMES_MAX = 3,
     PRICE_FEED_DEVIATE_RATIO_MAX            = 4,
     PRICE_FEED_DEVIATE_PENALTY              = 5,
@@ -62,7 +67,7 @@ struct SysParamTypeHash {
 
 static const unordered_map<SysParamType, std::tuple<string, uint64_t>, SysParamTypeHash> SysParamTable = {
     { MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT,         std::make_tuple("A",    11)         },
-    { PRICE_FEED_FCOIN_STAKE_AMOUNT_MIN,            std::make_tuple("B",    210000)     },  // 1%: min 210K fcoins deposited to be a price feeder
+    { PRICE_FEED_BCOIN_VOTE_AMOUNT_MIN,             std::make_tuple("B",    210000)     },  // 1%: min 210K bcoins deposited to be a price feeder
     { PRICE_FEED_CONTINUOUS_DEVIATE_TIMES_MAX,      std::make_tuple("C",    10)         },  // after 10 times continuous deviate limit penetration all deposit be deducted
     { PRICE_FEED_DEVIATE_RATIO_MAX,                 std::make_tuple("D",    3000)       },  // must be < 30% * 10000, otherwise penalized
     { PRICE_FEED_DEVIATE_PENALTY,                   std::make_tuple("E",    1000)       },  // deduct 1000 staked bcoins as penalty
@@ -79,8 +84,8 @@ static const unordered_map<SysParamType, std::tuple<string, uint64_t>, SysParamT
     { CDP_INTEREST_PARAM_A,                         std::make_tuple("P",    2)          },  // a = 2
     { CDP_INTEREST_PARAM_B,                         std::make_tuple("Q",    1)          },  // b = 1
     { CDP_SYSORDER_PENALTY_FEE_MIN,                 std::make_tuple("R",    10)         },  // min penalty fee = 10
-    { ASSET_ISSUE_FEE,                              std::make_tuple("S",    550)        },  // asset issue fee = 550
-    { ASSET_UPDATE_FEE,                             std::make_tuple("T",    110)        },  // asset update fee = 110
+    { ASSET_ISSUE_FEE,                              std::make_tuple("S",    550 * COIN) },  // asset issue fee = 550 WICC
+    { ASSET_UPDATE_FEE,                             std::make_tuple("T",    110* COIN)  },  // asset update fee = 110 WICC
 
 };
 

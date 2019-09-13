@@ -288,37 +288,33 @@ static string GetSystemInfo() {
 
     string json;
     json += "{";
-    json += "\"coreCount\":" + cpu + ",";
-    // TODO: generate fingerpints.
-    json += "\"fingerprint\": \"xxx\",";
-    json += "\"memoryCapability\":" + memory + ",";
-    json += "\"totalHDD\":" + totalHDD + ",";
-    json += "\"freeHDD\":" + freeHDD + ",";
-    json += "\"osType\":\"" + systemName + "\",";
-    json += "\"osVersion\":\"" + systemRelease + "\"";
+    json += "\"vcpu_count\":" + cpu + ",";
+    json += "\"mem\":" + memory + ",";
+    json += "\"disk_total\":" + totalHDD + ",";
+    json += "\"disk_free\":" + freeHDD + ",";
+    json += "\"os_type\":\"" + systemName + "\",";
+    json += "\"os_ver\":\"" + systemRelease + "\"";
     json += "}";
 
     return json;
 }
 
 bool GetMyExternalIP(CNetAddr& ipRet) {
-    // TODO: replace the default server.
-    string reportIp = SysCfg().GetArg("-reportip", "wicc.me/ip/report");
-    auto pos        = reportIp.find("/");
+    string ipuri = SysCfg().GetArg("-ipuri", "wiccip.me/ip");
+    auto pos        = ipuri.find("/");
     assert(pos != std::string::npos);
-    string host     = reportIp.substr(0, pos);
-    string uri      = reportIp.substr(pos);
+    string host     = ipuri.substr(0, pos);
+    string uri      = ipuri.substr(pos);
     string content  = GetSystemInfo();
 
     CService addrConnect(host, 80, true);
     if (!addrConnect.IsValid()) {
-        LogPrint("ERROR", "GetMyExternalIP() : service is unavalable: %s", host);
+        LogPrint("ERROR", "GetMyExternalIP() : service is unavalable: %s\n", host);
         return false;
     }
 
     stringstream stream;
-    stream << "POST " << uri;
-    stream << " HTTP/1.1\r\n";
+    stream << "POST" << " " << uri << " " << "HTTP/1.1\r\n";
     stream << "Host: " << host << "\r\n";
     stream << "Content-Type: application/json\r\n";
     stream << "Content-Length: " << content.length() << "\r\n";

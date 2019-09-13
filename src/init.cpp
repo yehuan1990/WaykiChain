@@ -238,7 +238,7 @@ string HelpMessage() {
     strUsage += "  -onlynet=<net>         " + _("Only connect to nodes in network <net> (IPv4, IPv6 or Tor)") + "\n";
     strUsage += "  -port=<port>           " + _("Listen for connections on <port> (default: 8333 or testnet: 18333)") + "\n";
     strUsage += "  -proxy=<ip:port>       " + _("Connect through SOCKS proxy") + "\n";
-    strUsage += "  -reportip=<ip:port/uri>" + _("Report ip") + "\n";
+    strUsage += "  -ipuri=<ip:port/path>  " + _("IP Reporting Service URI") + "\n";
     strUsage += "  -seednode=<ip>         " + _("Connect to a node to retrieve peer addresses, and disconnect") + "\n";
     strUsage += "  -socks=<n>             " + _("Select SOCKS version for -proxy (4 or 5, default: 5)") + "\n";
     strUsage += "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n";
@@ -285,7 +285,6 @@ string HelpMessage() {
         strUsage += "  -limitfreerelay=<n>    " + _("Continuously rate-limit free transactions to <n>*1000 bytes per minute (default:15)") + "\n";
         strUsage += "  -maxsigcachesize=<n>   " + _("Limit size of signature cache to <n> entries (default: 50000)") + "\n";
     }
-    strUsage += "  -mintxfee=<amt>        " + _("Fees smaller than this are considered zero fee (for transaction creation) (default:") + " " + FormatMoney(CBaseTx::nMinTxFee) + ")" + "\n";
     strUsage += "  -minrelaytxfee=<amt>   " + _("Fees smaller than this are considered zero fee (for relaying) (default:") + " " + FormatMoney(CBaseTx::nMinRelayTxFee) + ")" + "\n";
     strUsage += "  -logprinttoconsole     " + _("Send trace/debug info to console instead of debug.log file") + "\n";
     if (SysCfg().GetBoolArg("-help-debug", false)) {
@@ -513,14 +512,6 @@ bool AppInit(boost::thread_group &threadGroup) {
     // a transaction spammer can cheaply fill blocks using
     // 1-satoshi-fee transactions. It should be set above the real
     // cost to you of processing a transaction.
-    if (SysCfg().IsArgCount("-mintxfee")) {
-        int64_t n = 0;
-        if (ParseMoney(SysCfg().GetArg("-mintxfee", ""), n) && n > 0) {
-            CBaseTx::nMinTxFee = n;
-        } else {
-            return InitError(strprintf(_("Invalid amount for -mintxfee=<amount>: '%s'"), SysCfg().GetArg("-mintxfee", "")));
-        }
-    }
     if (SysCfg().IsArgCount("-minrelaytxfee")) {
         int64_t n = 0;
         if (ParseMoney(SysCfg().GetArg("-minrelaytxfee", ""), n) && n > 0) {

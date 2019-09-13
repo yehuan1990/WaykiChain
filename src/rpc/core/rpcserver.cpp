@@ -306,10 +306,12 @@ static const CRPCCommand vRPCCommands[] =
     { "submitcontractdeploytx", &submitcontractdeploytx, false,     false,      true },
     { "submitcontractcalltx",   &submitcontractcalltx,   false,     false,      true },
     { "submitdelegatevotetx",   &submitdelegatevotetx,   false,     false,      true },
+    { "submituniversalcontractdeploytx", &submituniversalcontractdeploytx, false,     false,      true },
+    { "submituniversalcontractcalltx",   &submituniversalcontractcalltx,   false,     false,      true },
 
     /* for CDP */
     { "submitpricefeedtx",      &submitpricefeedtx,      true,      false,      true },
-    { "submitfcoinstaketx",     &submitfcoinstaketx,     true,      false,      true },
+    { "submitcoinstaketx",     &submitcoinstaketx,     true,      false,      true },
     { "submitcdpstaketx",       &submitcdpstaketx,       true,      false,      true },
     { "submitcdpredeemtx",      &submitcdpredeemtx,      true,      false,      true },
     { "submitcdpliquidatetx",   &submitcdpliquidatetx,   true,      false,      true },

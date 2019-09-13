@@ -30,21 +30,21 @@ bool CPriceFeedTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidationState &
                         txUid.ToString()), PRICE_FEED_FAIL, "bad-read-accountdb");
 
     CRegID sendRegId = txUid.get<CRegID>();
-    if (!cw.delegateCache.ExistDelegate(sendRegId.ToString())) { // must be a miner
+    if (!cw.delegateCache.ExistDelegate(sendRegId.ToString())) { // must be a delegate
         return state.DoS(100, ERRORMSG("CPriceFeedTx::CheckTx, txUid %s account is not a delegate error",
                         txUid.ToString()), PRICE_FEED_FAIL, "account-isn't-delegate");
     }
 
-    uint64_t stakedAmountMin;
-    if (!cw.sysParamCache.GetParam(PRICE_FEED_FCOIN_STAKE_AMOUNT_MIN, stakedAmountMin)) {
-        return state.DoS(100, ERRORMSG("CPriceFeedTx::CheckTx, read PRICE_FEED_FCOIN_STAKE_AMOUNT_MIN error",
+    uint64_t votedAmountMin;
+    if (!cw.sysParamCache.GetParam(PRICE_FEED_BCOIN_VOTE_AMOUNT_MIN, votedAmountMin)) {
+        return state.DoS(100, ERRORMSG("CPriceFeedTx::CheckTx, read PRICE_FEED_BCOIN_VOTE_AMOUNT_MIN error",
                         txUid.ToString()), READ_SYS_PARAM_FAIL, "read-sysparamdb-error");
     }
-
-    CAccountToken accountToken = account.GetToken(SYMB::WGRT);
-    if (accountToken.staked_amount < stakedAmountMin) // must stake enough fcoins
-        return state.DoS(100, ERRORMSG("CPriceFeedTx::CheckTx, Staked Fcoins insufficient by txUid %s account error",
-                        txUid.ToString()), PRICE_FEED_FAIL, "account-stakedfoins-insufficient");
+    CAccountToken accountToken = account.GetToken(SYMB::WICC);
+    if (accountToken.voted_amount < votedAmountMin * COIN) // must stake enough bcoins to be a price feeder
+        return state.DoS(100, ERRORMSG("CPriceFeedTx::CheckTx, Voted Bcoins insufficient(%llu vs %llu) by txUid %s account error",
+                        accountToken.voted_amount, votedAmountMin, txUid.ToString()),
+                        PRICE_FEED_FAIL, "account-voted-boins-insufficient");
 
     IMPLEMENT_CHECK_TX_SIGNATURE(account.owner_pubkey);
     return true;

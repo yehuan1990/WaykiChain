@@ -310,50 +310,10 @@ Value submitsendtx(const Array& params, bool fHelp) {
 
     EnsureWalletIsUnlocked();
 
-    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
-    CKeyID sendKeyId, recvKeyId;
-    if (!GetKeyId(params[0].get_str(), sendKeyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid sendaddress");
-
-    if (!GetKeyId(params[1].get_str(), recvKeyId))
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
-
-    CAccount account;
-    if (!spCW->accountCache.GetAccount(sendKeyId, account)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sender account not exist");
-    }
-
-    CPubKey sendPubKey;
-    if (!pWalletMain->GetPubKey(sendKeyId, sendPubKey))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Sender account not found in wallet");
-
-    /**
-     * We need to choose the proper field as the sender/receiver's account according to
-     * the two factor: whether the sender's account is registered or not, whether the
-     * RegID is mature or not.
-     *
-     * |-------------------------------|-------------------|-------------------|
-     * |                               |      SENDER       |      RECEIVER     |
-     * |-------------------------------|-------------------|-------------------|
-     * | NOT registered                |     Public Key    |      Key ID       |
-     * |-------------------------------|-------------------|-------------------|
-     * | registered BUT immature       |     Public Key    |      Key ID       |
-     * |-------------------------------|-------------------|-------------------|
-     * | registered AND mature         |     Reg ID        |      Reg ID       |
-     * |-------------------------------|-------------------|-------------------|
-     */
-    CUserID sendUserId, recvUserId;
-    CRegID sendRegId, recvRegId;
-    sendUserId = (spCW->accountCache.GetRegId(CUserID(sendKeyId), sendRegId) && sendRegId.IsMature(chainActive.Height()))
-                     ? CUserID(sendRegId)
-                     : CUserID(sendPubKey);
-    recvUserId = (spCW->accountCache.GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
-                     ? CUserID(recvRegId)
-                     : CUserID(recvKeyId);
-
-    ComboMoney cmCoin = RPC_PARAM::GetComboMoney(params[2], SYMB::WICC);
-
-    ComboMoney cmFee = RPC_PARAM::GetFee(params, 3, UCOIN_TRANSFER_TX);
+    CUserID sendUserId = RPC_PARAM::GetUserId(params[0], true);
+    CUserID recvUserId = RPC_PARAM::GetUserId(params[1]);
+    ComboMoney cmCoin  = RPC_PARAM::GetComboMoney(params[2], SYMB::WICC);
+    ComboMoney cmFee   = RPC_PARAM::GetFee(params, 3, UCOIN_TRANSFER_TX);
 
     auto pSymbolErr = pCdMan->pAssetCache->CheckTransferCoinSymbol(cmCoin.symbol);
     if (pSymbolErr)
@@ -362,6 +322,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
     if (cmCoin.amount == 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Coins is zero!");
 
+    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, sendUserId);
     RPC_PARAM::CheckAccountBalance(account, cmCoin.symbol, SUB_FREE, cmCoin.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
@@ -381,18 +342,7 @@ Value submitsendtx(const Array& params, bool fHelp) {
             cmCoin.GetSawiAmount(), cmFee.symbol, cmFee.GetSawiAmount(), memo);
     }
 
-    if (!pWalletMain->Sign(sendKeyId, pBaseTx->ComputeSignatureHash(), pBaseTx->signature))
-        throw JSONRPCError(RPC_WALLET_ERROR, "Sign failed");
-
-    std::tuple<bool, string> ret = pWalletMain->CommitTx(pBaseTx.get());
-    if (!std::get<0>(ret)) {
-        throw JSONRPCError(RPC_WALLET_ERROR, std::get<1>(ret));
-    }
-
-    Object obj;
-    obj.push_back(Pair("txid", std::get<1>(ret)));
-
-    return obj;
+    return SubmitTx(account.keyid, *pBaseTx);
 }
 
 Value genmulsigtx(const Array& params, bool fHelp) {
@@ -403,13 +353,13 @@ Value genmulsigtx(const Array& params, bool fHelp) {
             "\n create multisig transaction by multisigscript, recvaddress, amount, fee, height\n" +
             HelpRequiringPassphrase() +
             "\nArguments:\n"
-            "1.\"multisigscript\"  (string, required) The Coin address to send to.\n"
-            "2.\"recvaddress\"  (string, required) The Coin address to receive.\n"
-            "3.\"amount\"  (numeric, required)\n"
-            "4.\"fee\"     (numeric, required)\n"
-            "5.\"height\"  (int, optional)\n"
+            "1.\"multisigscript\":  (string, required) The Coin address to send to.\n"
+            "2.\"recvaddress\":     (string, required) The Coin address to receive.\n"
+            "3.\"amount\":          (numeric, required)\n"
+            "4.\"fee\":             (numeric, required)\n"
+            "5.\"height\":          (numeric, optional)\n"
             "\nResult:\n"
-            "\"txid\"  (string) The transaction id.\n"
+            "\"txid\"               (string) The transaction id.\n"
             "\nExamples:\n" +
             HelpExampleCli("genmulsigtx",
                            "\"0203210233e68ec1402f875af47201efca7c9f210c93f10016ad73d6cd789212d5571"
@@ -435,7 +385,7 @@ Value genmulsigtx(const Array& params, bool fHelp) {
     CKeyID recvKeyId;
     CUserID recvUserId;
     CRegID recvRegId;
-    int height = forkPool.TipHeight();
+    int32_t height = forkPool.TipHeight();
 
     if (!GetKeyId(params[1].get_str(), recvKeyId)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");

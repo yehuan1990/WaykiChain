@@ -379,19 +379,23 @@ bool CBaseParams::CreateGenesisDelegateTx(vector<std::shared_ptr<CBaseTx> > &vpt
 }
 
 bool CBaseParams::CreateFundCoinRewardTx(vector<std::shared_ptr<CBaseTx> >& vptx, NET_TYPE type) {
-    // global account
-    auto pTx      = std::make_shared<CCoinRewardTx>(CNullID(), nStableCoinGenesisHeight, SYMB::WGRT, 0);
+    // Stablecoin Global Reserve Account with its initial reseve creation
+    auto
+    pTx = std::make_shared<CCoinRewardTx>(  CNullID(), nStableCoinGenesisHeight,
+                                            SYMB::WUSD, kFundCoinGenesisInitialReserveAmount * COIN);
     pTx->nVersion = INIT_TX_VERSION;
     vptx.push_back(pTx);
 
-    // Initial FundCoin Owner's account
-    pTx = std::make_shared<CCoinRewardTx>(CPubKey(ParseHex(IniCfg().GetInitFcoinOwnerPubKey(type))), nStableCoinGenesisHeight,
-                                          SYMB::WGRT, kTotalFundCoinGenesisReleaseAmount * COIN);
+    // FundCoin Genesis Account with the total FundCoin release creation
+    pTx = std::make_shared<CCoinRewardTx>(  CPubKey(ParseHex(IniCfg().GetInitFcoinOwnerPubKey(type))),
+                                            nStableCoinGenesisHeight,
+                                            SYMB::WGRT, kFundCoinGenesisTotalReleaseAmount * COIN);
     vptx.push_back(pTx);
 
-    // Order Matching Service's account
-    pTx = std::make_shared<CCoinRewardTx>(CPubKey(ParseHex(IniCfg().GetDexMatchServicePubKey(type))), nStableCoinGenesisHeight,
-                                          SYMB::WGRT, 0);
+    // DEX Order Matching Service Account
+    pTx = std::make_shared<CCoinRewardTx>(  CPubKey(ParseHex(IniCfg().GetDexMatchServicePubKey(type))),
+                                            nStableCoinGenesisHeight,
+                                            SYMB::WGRT, 0);
     vptx.push_back(pTx);
 
     return true;
@@ -400,7 +404,8 @@ bool CBaseParams::CreateFundCoinRewardTx(vector<std::shared_ptr<CBaseTx> >& vptx
 bool CBaseParams::InitializeParams(int argc, const char* const argv[]) {
     ParseParameters(argc, argv);
     if (!boost::filesystem::is_directory(GetDataDir(false))) {
-        fprintf(stderr, "Error: Specified data directory \"%s\" does not exist.\n", CBaseParams::m_mapArgs["-datadir"].c_str());
+        fprintf(stderr, "Error: Specified data directory \"%s\" does not exist.\n",
+                CBaseParams::m_mapArgs["-datadir"].c_str());
         return false;
     }
 

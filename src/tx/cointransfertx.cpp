@@ -129,7 +129,7 @@ bool CCoinTransferTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw
     CAccount srcAccount;
     if (!cw.accountCache.GetAccount(txUid, srcAccount))
         return state.DoS(100, ERRORMSG("CCoinTransferTx::ExecuteTx, read txUid %s account info error",
-                        txUid.ToString()), FCOIN_STAKE_FAIL, "bad-read-accountdb");
+                        txUid.ToString()), UCOIN_STAKE_FAIL, "bad-read-accountdb");
 
     if (!GenerateRegID(srcAccount, cw, state, height, index)) {
         return false;
@@ -172,7 +172,7 @@ bool CCoinTransferTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw
             return state.DoS(100, ERRORMSG("CCoinTransferTx::ExecuteTx, read SCOIN_RESERVE_FEE_RATIO error"),
                              READ_SYS_PARAM_FAIL, "bad-read-sysparamdb");
         }
-        uint64_t reserveFeeScoins = coin_amount * riskReserveFeeRatio / kPercentBoost;
+        uint64_t reserveFeeScoins = coin_amount * riskReserveFeeRatio / RATIO_BOOST;
         actualCoinsToSend -= reserveFeeScoins;
 
         fcoinGenesisAccount.OperateBalance(SYMB::WUSD, ADD_FREE, reserveFeeScoins);

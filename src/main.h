@@ -46,7 +46,7 @@
 #include "tx/contracttx.h"
 #include "tx/delegatetx.h"
 #include "tx/dextx.h"
-#include "tx/fcoinstaketx.h"
+#include "tx/coinstaketx.h"
 #include "tx/mulsigtx.h"
 #include "tx/pricefeedtx.h"
 #include "tx/tx.h"
@@ -696,8 +696,8 @@ void Serialize(Stream &os, const std::shared_ptr<CBaseTx> &pa, int32_t nType, in
 
         case BCOIN_TRANSFER_MTX:
             Serialize(os, *((CMulsigTx *)(pa.get())), nType, nVersion); break;
-        case FCOIN_STAKE_TX:
-            Serialize(os, *((CFcoinStakeTx *)(pa.get())), nType, nVersion); break;
+        case UCOIN_STAKE_TX:
+            Serialize(os, *((CCoinStakeTx *)(pa.get())), nType, nVersion); break;
         case ASSET_ISSUE_TX:
             Serialize(os, *((CAssetIssueTx *)(pa.get())), nType, nVersion); break;
         case ASSET_UPDATE_TX:
@@ -788,9 +788,9 @@ void Unserialize(Stream &is, std::shared_ptr<CBaseTx> &pa, int32_t nType, int32_
             break;
         }
 
-        case FCOIN_STAKE_TX: {
-            pa = std::make_shared<CFcoinStakeTx>();
-            Unserialize(is, *((CFcoinStakeTx *)(pa.get())), nType, nVersion);
+        case UCOIN_STAKE_TX: {
+            pa = std::make_shared<CCoinStakeTx>();
+            Unserialize(is, *((CCoinStakeTx *)(pa.get())), nType, nVersion);
             break;
         }
 

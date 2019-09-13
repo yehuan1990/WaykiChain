@@ -20,23 +20,23 @@
 static bool GetFuelLimit(CBaseTx &tx, int32_t height, CCacheWrapper &cw, CValidationState &state, uint64_t &fuelLimit) {
     uint64_t fuelRate = tx.GetFuelRate(cw.contractCache);
     if (fuelRate == 0)
-        return state.DoS(100, ERRORMSG("GetFuelLimit, feulRate cannot be 0"), REJECT_INVALID,
-                         "invalid-fuel-rate");
+        return state.DoS(100, ERRORMSG("GetFuelLimit, fuelRate cannot be 0"), REJECT_INVALID, "invalid-fuel-rate");
 
     uint64_t minFee;
     if (!GetTxMinFee(tx.nTxType, height, tx.fee_symbol, minFee))
-        return state.DoS(100, ERRORMSG("GetFuelLimit, get minFee failed"),
-            REJECT_INVALID, "get-min-fee-failed");
-    if (tx.llFees <= minFee) {
-        return state.DoS(100, ERRORMSG("GetFuelLimit, fees is too small to invoke contract"),
-            REJECT_INVALID, "bad-tx-fee-toosmall");
+        return state.DoS(100, ERRORMSG("GetFuelLimit, get minFee failed"), REJECT_INVALID, "get-min-fee-failed");
 
+    if (tx.llFees < minFee) {
+        return state.DoS(
+            100, ERRORMSG("GetFuelLimit, fees is too small(%llu vs %llu) to invoke contract", tx.llFees, minFee),
+            REJECT_INVALID, "bad-tx-fee-toosmall");
     }
-    fuelLimit = ((tx.llFees - minFee) / fuelRate) * 100;
-    if (fuelLimit > MAX_BLOCK_RUN_STEP) {
-        fuelLimit = MAX_BLOCK_RUN_STEP;
-    }
-    assert(fuelLimit > 0);
+
+    uint64_t reservedFeesForMiner = minFee * CONTRACT_CALL_RESERVED_FEES_RATIO / 100;
+    uint64_t reservedFeesForGas   = tx.llFees - reservedFeesForMiner;
+
+    fuelLimit = std::min<uint64_t>((reservedFeesForGas / fuelRate) * 100, MAX_BLOCK_RUN_STEP);
+
     return true;
 }
 
@@ -63,7 +63,7 @@ bool CLuaContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
         cw.sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
         uint64_t feeMedianPrice = cw.ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(fee_symbol, SYMB::WUSD));
         int32_t txSize          = ::GetSerializeSize(GetNewInstance(), SER_NETWORK, PROTOCOL_VERSION);
-        double dFeePerKb        = double(feeMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
+        double dFeePerKb        = double(feeMedianPrice) / PRICE_BOOST * (llFees - llFuel) / (txSize / 1000.0);
         if (dFeePerKb != 0 && dFeePerKb < CBaseTx::nMinRelayTxFee) {
             return state.DoS(100, ERRORMSG("CLuaContractDeployTx::CheckTx, fee too litter in fee/kb: %.4f < %lld",
                             dFeePerKb, CBaseTx::nMinRelayTxFee), REJECT_INVALID, "fee-too-litter-in-fee/kb");
@@ -179,7 +179,8 @@ bool CLuaContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CValidatio
 bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
 
     uint64_t fuelLimit;
-    if (!GetFuelLimit(*this, height, cw, state, fuelLimit)) return false;
+    if (!GetFuelLimit(*this, height, cw, state, fuelLimit))
+        return false;
 
     CAccount srcAccount;
     if (!cw.accountCache.GetAccount(txUid, srcAccount)) {
@@ -222,19 +223,19 @@ bool CLuaContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrappe
     CLuaVMRunEnv vmRunEnv;
 
     CLuaVMContext context;
-    context.p_cw = &cw;
-    context.height = height;
-    context.p_base_tx = this;
-    context.fuel_limit = fuelLimit;
-    context.transfer_symbol = SYMB::WICC;
-    context.transfer_amount = coin_amount;
+    context.p_cw              = &cw;
+    context.height            = height;
+    context.p_base_tx         = this;
+    context.fuel_limit        = fuelLimit;
+    context.transfer_symbol   = SYMB::WICC;
+    context.transfer_amount   = coin_amount;
     context.p_tx_user_account = &srcAccount;
-    context.p_app_account = &desAccount;
-    context.p_contract = &contract;
-    context.p_arguments = &arguments;
+    context.p_app_account     = &desAccount;
+    context.p_contract        = &contract;
+    context.p_arguments       = &arguments;
 
     int64_t llTime = GetTimeMillis();
-    auto pExecErr = vmRunEnv.ExecuteContract(&context, nRunStep);
+    auto pExecErr  = vmRunEnv.ExecuteContract(&context, nRunStep);
     if (pExecErr)
         return state.DoS(100, ERRORMSG("CLuaContractInvokeTx::ExecuteTx, txid=%s run script error:%s",
                         GetHash().GetHex(), *pExecErr), UPDATE_ACCOUNT_FAIL, "run-script-error: " + *pExecErr);
@@ -300,7 +301,7 @@ bool CUniversalContractDeployTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
         }
 
         int32_t txSize   = ::GetSerializeSize(GetNewInstance(), SER_NETWORK, PROTOCOL_VERSION);
-        double dFeePerKb = double(feeMedianPrice) / kPercentBoost * (llFees - llFuel) / (txSize / 1000.0);
+        double dFeePerKb = double(feeMedianPrice) / PRICE_BOOST * (llFees - llFuel) / (txSize / 1000.0);
         if (dFeePerKb != 0 && dFeePerKb < CBaseTx::nMinRelayTxFee) {
             return state.DoS(100, ERRORMSG("CUniversalContractDeployTx::CheckTx, fee too litter in fee/kb: %.4f < %lld",
                             dFeePerKb, CBaseTx::nMinRelayTxFee), REJECT_INVALID, "fee-too-litter-in-fee/kb");
@@ -420,7 +421,8 @@ bool CUniversalContractInvokeTx::CheckTx(int32_t height, CCacheWrapper &cw, CVal
 bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCacheWrapper &cw, CValidationState &state) {
 
     uint64_t fuelLimit;
-    if (!GetFuelLimit(*this, height, cw, state, fuelLimit)) return false;
+    if (!GetFuelLimit(*this, height, cw, state, fuelLimit))
+        return false;
 
     vector<CReceipt> receipts;
 
@@ -470,18 +472,19 @@ bool CUniversalContractInvokeTx::ExecuteTx(int32_t height, int32_t index, CCache
     uint64_t fuelRate = GetFuelRate(cw.contractCache);
 
     CLuaVMContext context;
-    context.p_cw = &cw;
-    context.height = height;
-    context.p_base_tx = this;
-    context.fuel_limit = fuelLimit;
-    context.transfer_symbol = coin_symbol;
-    context.transfer_amount = coin_amount;
+    context.p_cw              = &cw;
+    context.height            = height;
+    context.p_base_tx         = this;
+    context.fuel_limit        = fuelLimit;
+    context.transfer_symbol   = coin_symbol;
+    context.transfer_amount   = coin_amount;
     context.p_tx_user_account = &srcAccount;
-    context.p_app_account = &desAccount;
-    context.p_contract = &contract;
-    context.p_arguments = &arguments;
+    context.p_app_account     = &desAccount;
+    context.p_contract        = &contract;
+    context.p_arguments       = &arguments;
+
     int64_t llTime = GetTimeMillis();
-    auto pExecErr = vmRunEnv.ExecuteContract(&context, nRunStep);
+    auto pExecErr  = vmRunEnv.ExecuteContract(&context, nRunStep);
     if (pExecErr)
         return state.DoS(100, ERRORMSG("CUniversalContractInvokeTx::ExecuteTx, txid=%s run script error:%s",
             GetHash().GetHex(), *pExecErr), UPDATE_ACCOUNT_FAIL, "run-script-error: " + *pExecErr);

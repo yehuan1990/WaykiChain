@@ -109,7 +109,7 @@ public:
     }
 };
 
-class CAsset {
+class CBaseAsset {
 public:
     TokenSymbol symbol;     // asset symbol, E.g WICC | WUSD
     CUserID owner_uid;      // creator or owner user id of the asset
@@ -117,9 +117,9 @@ public:
     uint64_t total_supply;  // boosted by 10^8 for the decimal part, max is 90 billion.
     bool mintable;          // whether this token can be minted in the future.
 public:
-    CAsset(): total_supply(0), mintable(false) {}
+    CBaseAsset(): total_supply(0), mintable(false) {}
 
-    CAsset(const TokenSymbol& symbolIn, const CUserID& ownerUseridIn, const TokenName& nameIn,
+    CBaseAsset(const TokenSymbol& symbolIn, const CUserID& ownerUseridIn, const TokenName& nameIn,
            uint64_t totalSupplyIn, bool mintableIn)
         : symbol(symbolIn),
           owner_uid(ownerUseridIn),
@@ -130,27 +130,9 @@ public:
     IMPLEMENT_SERIALIZE(READWRITE(symbol); READWRITE(owner_uid); READWRITE(name);
                         READWRITE(mintable); READWRITE(VARINT(total_supply));)
 
-    bool IsEmpty() const { return owner_uid.IsEmpty(); }
-
-    void SetEmpty() {
-        owner_uid.SetEmpty();
-        symbol.clear();
-        name.clear();
-        mintable = false;
-        total_supply = 0;
-    }
-
 public:
     static bool CheckSymbolChar(const char ch) {
-        return  (ch >= '0' && ch <= '9') ||
-                (ch >= 'A' && ch <= 'Z') ||
-                (ch >= 'a' && ch <= 'z') ||
-                ch == '@' ||
-                ch == '#' ||
-                ch == '.' ||
-                ch == '_' ||
-                ch == '-' ||
-                ch == '/';
+        return  ch >= 'A' && ch <= 'Z';
     }
 
     // @return nullptr if succeed, else err string
@@ -167,14 +149,42 @@ public:
         return nullptr;
     }
 
-    Object ToJson() const {
-        Object result;
-        result.push_back(Pair("asset_symbol",   symbol));
-        result.push_back(Pair("owner_uid",      owner_uid.ToString()));
-        result.push_back(Pair("asset_name",     name));
-        result.push_back(Pair("total_supply",   total_supply));
-        result.push_back(Pair("mintable",       mintable));
-        return result;
+};
+
+class CAsset: public CBaseAsset {
+public:
+    uint64_t min_order_amount;  // min amount for submit order tx, 0 is unlimit
+    uint64_t max_order_amount;  // max amount for submit order tx, 0 is unlimit
+public:
+    CAsset(): CBaseAsset(), min_order_amount(0), max_order_amount(0) {}
+
+    CAsset(CBaseAsset *pBaseAsset): CBaseAsset(*pBaseAsset), min_order_amount(0), max_order_amount(0) {}
+
+    CAsset(const TokenSymbol& symbolIn, const CUserID& ownerUseridIn, const TokenName& nameIn,
+           uint64_t totalSupplyIn, bool mintableIn, uint64_t minOrderAmountIn, uint64_t maxOrderAmountIn)
+        : CBaseAsset(symbolIn, ownerUseridIn, nameIn, totalSupplyIn, mintableIn),
+          min_order_amount(minOrderAmountIn), max_order_amount(maxOrderAmountIn){};
+
+    IMPLEMENT_SERIALIZE(
+        READWRITE(symbol);
+        READWRITE(owner_uid);
+        READWRITE(name);
+        READWRITE(mintable);
+        READWRITE(VARINT(total_supply));
+        READWRITE(VARINT(max_order_amount));
+        READWRITE(VARINT(min_order_amount));
+    )
+
+    bool IsEmpty() const { return owner_uid.IsEmpty(); }
+
+    void SetEmpty() {
+        owner_uid.SetEmpty();
+        symbol.clear();
+        name.clear();
+        mintable = false;
+        total_supply = 0;
+        max_order_amount = 0;
+        min_order_amount = 0;
     }
 };
 
