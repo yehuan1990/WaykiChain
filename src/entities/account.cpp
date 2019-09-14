@@ -33,11 +33,21 @@ bool CAccount::OperateBalance(const TokenSymbol &tokenSymbol, const BalanceOpTyp
             return true;
         }
         case SUB_FREE: {
-            if (accountToken.free_amount < value)
+            if (accountToken.free_amount < value){
+
+                LogPrint("ACCOUNT", "CAccount::OperateBalance, free_amount insufficient(%llu vs %llu) of %s\n",
+                         accountToken.free_amount, value, tokenSymbol);
+
                 return ERRORMSG("CAccount::OperateBalance, free_amount insufficient(%llu vs %llu) of %s",
                                 accountToken.free_amount, value, tokenSymbol);
+            }
 
+
+            auto oldAmount = accountToken.free_amount ;
             accountToken.free_amount -= value;
+
+            LogPrint("ACCOUNT","CAccount::OperateBalance, free_amount from (%llu to %llu) of %s,account regid=%s\n",
+                            oldAmount, accountToken.free_amount, tokenSymbol,regid.ToString());
             return true;
         }
         case STAKE: {

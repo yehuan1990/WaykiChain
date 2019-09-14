@@ -7,13 +7,14 @@
 #include "persistence/block.h"
 #include "main.h"
 #include <unordered_map>
+#include "tx/txmempool.h"
 
 extern  string GetMinerAccountFromBlock(CBlock block) ;
 extern CChain chainActive ;
 
 extern bool VerifyForkPoolBlock(const CBlock *pBlock, CCacheWrapper &cwIn) ;
 extern bool AcceptToMemoryPool(CTxMemPool &pool, CValidationState &state, CBaseTx *pBaseTx, bool fLimitFree, bool fRejectInsaneFee) ;
-
+extern CTxMemPool mempool;
 
 static bool BlockCompare(CBlock a, CBlock b ){
 
@@ -80,6 +81,7 @@ bool CForkPool::OnConsensusFailed(CBlock& block){
 
     blocks.clear() ;
     unCheckedTxHashes.clear() ;
+    unCheckedTx.clear() ;
 
 
     GetTipBlock(tipBlock);
@@ -94,7 +96,7 @@ bool CForkPool::AddBlock(CBlock &block) {
 
     Init() ;
 
-  /*  if(block.GetPrevBlockHash() == tipBlock.GetHash()){
+    if(block.GetPrevBlockHash() == tipBlock.GetHash()){
 
         auto spCW1 = std::make_shared<CCacheWrapper>(*spCW);
         if(VerifyForkPoolBlock(&block,*spCW1)){
@@ -103,7 +105,7 @@ bool CForkPool::AddBlock(CBlock &block) {
             InsertBlock(block) ;
         }
 
-    }else{*/
+    }else{
 
         vector<CBlock> tempBlocks ;
         tempBlocks.push_back(block) ;
@@ -137,7 +139,7 @@ bool CForkPool::AddBlock(CBlock &block) {
             LogPrint("INFO", "CForkPool::AddBlock() ERROR: find orphanBlock in forkPool, blockHash=%s,blockHeight =%d",block.GetHash().GetHex(), block.GetHeight()) ;
             return false ;
         }
-  //  }
+    }
 
     return true ;
 }
@@ -150,10 +152,17 @@ bool CForkPool::RemoveBlock(CBlock &block) {
     blocks.erase(block.GetHash());
     for( auto tx: block.vptx){
         if(unCheckedTxHashes.count(tx->GetHash())){
-            if(unCheckedTxHashes.erase(tx->GetHash()) == 1)
+            if(unCheckedTxHashes.erase(tx->GetHash()) == 1) {
                 unCheckedTxHashes.erase(tx->GetHash());
-            else
+                unCheckedTx.erase(tx->GetHash());
+            }else
                 unCheckedTxHashes.insert({tx->GetHash(),unCheckedTxHashes[tx->GetHash()]-1}) ;
+        }
+
+        if(spCW->txCache.HaveTx(tx->GetHash())== uint256()&& !tx->IsBlockRewardTx()){
+
+            CValidationState state;
+            AcceptToMemoryPool(mempool, state, tx.get(), false);
         }
 
     }
@@ -170,11 +179,19 @@ bool CForkPool::RemoveUnderHeight(const uint32_t height) {
 
             CBlock block = iter->second ;
             for( auto tx: block.vptx){
+
                 if(unCheckedTxHashes.count(tx->GetHash())){
-                    if(unCheckedTxHashes.erase(tx->GetHash()) == 1)
+                    if(unCheckedTxHashes[tx->GetHash()] == 1){
                         unCheckedTxHashes.erase(tx->GetHash());
-                    else
+                        unCheckedTx.erase(tx->GetHash());
+                    } else
                         unCheckedTxHashes.insert({tx->GetHash(),unCheckedTxHashes[tx->GetHash()]-1}) ;
+                }
+
+                if(spCW->txCache.HaveTx(tx->GetHash())== uint256()&& !tx->IsBlockRewardTx()){
+
+                    CValidationState state;
+                    AcceptToMemoryPool(mempool, state, tx.get(), false);
                 }
             }
 

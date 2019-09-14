@@ -343,9 +343,9 @@ uint32_t G_CONFIG_TABLE::MaxVoteCandidateNum = 22;
 // Block height to enable feature fork version
 uint32_t G_CONFIG_TABLE::nFeatureForkHeight_mainNet    = 6000000;
 uint32_t G_CONFIG_TABLE::nFeatureForkHeight_testNet    = 520;
-uint32_t G_CONFIG_TABLE::nFeatureForkHeight_regtestNet = 10;
+uint32_t G_CONFIG_TABLE::nFeatureForkHeight_regtestNet = 60;
 
 // Block height for stable coin genesis
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_mainNet     = 5880000;
 uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_testNet     = 500;
-uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_regtestNet  = 8;
+uint32_t G_CONFIG_TABLE::nStableScoinGenesisHeight_regtestNet  = 40;

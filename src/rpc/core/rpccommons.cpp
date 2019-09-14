@@ -217,13 +217,15 @@ Object GetTxDetailJSON(const uint256& txid) {
     Object obj;
     {
         LOCK(cs_main);
+
         CBlock genesisblock;
         CBlockIndex* pGenesisBlockIndex = mapBlockIndex[SysCfg().GetGenesisBlockHash()];
         ReadBlockFromDisk(pGenesisBlockIndex, genesisblock);
         assert(genesisblock.GetMerkleRootHash() == genesisblock.BuildMerkleTree());
+        auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
         for (uint32_t i = 0; i < genesisblock.vptx.size(); ++i) {
             if (txid == genesisblock.GetTxid(i)) {
-                obj = genesisblock.vptx[i]->ToJson(*pCdMan->pAccountCache);
+                obj = genesisblock.vptx[i]->ToJson(spCW->accountCache);
 
                 obj.push_back(Pair("confirmations",     chainActive.Height()));
                 obj.push_back(Pair("confirmed_height",  (int32_t)0));
@@ -242,7 +244,8 @@ Object GetTxDetailJSON(const uint256& txid) {
 
         if (SysCfg().IsTxIndex()) {
             CDiskTxPos postx;
-            if (pCdMan->pContractCache->ReadTxIndex(txid, postx)) {
+            auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+            if (spCW->contractCache.ReadTxIndex(txid, postx)) {
                 CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
                 CBlockHeader header;
 
@@ -250,7 +253,7 @@ Object GetTxDetailJSON(const uint256& txid) {
                     file >> header;
                     fseek(file, postx.nTxOffset, SEEK_CUR);
                     file >> pBaseTx;
-                    obj = pBaseTx->ToJson(*pCdMan->pAccountCache);
+                    obj = pBaseTx->ToJson(spCW->accountCache);
 
                     obj.push_back(Pair("confirmations",     chainActive.Height() - (int32_t)header.GetHeight()));
                     obj.push_back(Pair("confirmed_height",  (int32_t)header.GetHeight()));
@@ -258,7 +261,6 @@ Object GetTxDetailJSON(const uint256& txid) {
                     obj.push_back(Pair("block_hash",        header.GetHash().GetHex()));
 
                     vector<CReceipt> receipts;
-                    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
                     spCW->txReceiptCache.GetTxReceipts(txid, receipts);
                     Array receiptArray;
                     for (const auto &receipt : receipts) {
@@ -280,13 +282,32 @@ Object GetTxDetailJSON(const uint256& txid) {
         {
             pBaseTx = mempool.Lookup(txid);
             if (pBaseTx.get()) {
-                obj = pBaseTx->ToJson(*pCdMan->pAccountCache);
+                obj = pBaseTx->ToJson(spCW->accountCache);
                 CDataStream ds(SER_DISK, CLIENT_VERSION);
                 ds << pBaseTx;
                 obj.push_back(Pair("rawtx", HexStr(ds.begin(), ds.end())));
                 return obj;
             }
         }
+
+        {
+
+            LOCK(cs_forkpool) ;
+
+            if(forkPool.unCheckedTx.count(txid) ){
+
+                pBaseTx = forkPool.unCheckedTx[txid] ;
+                if (pBaseTx.get()) {
+                    obj = pBaseTx->ToJson(spCW->accountCache);
+                    CDataStream ds(SER_DISK, CLIENT_VERSION);
+                    ds << pBaseTx;
+                    obj.push_back(Pair("rawtx", HexStr(ds.begin(), ds.end())));
+                    return obj;
+                }
+            }
+
+        }
+
     }
 
     return obj;
@@ -400,7 +421,8 @@ CUserID RPC_PARAM::GetUserId(const Value &jsonValue, const bool senderUid) {
      * |-------------------------------|-------------------|-------------------|
      */
     CRegID regid;
-    if (pCdMan->pAccountCache->GetRegId(*pUserId, regid) && regid.IsMature(chainActive.Height())) {
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (spCW->accountCache.GetRegId(*pUserId, regid) && regid.IsMature(chainActive.Height())) {
         return CUserID(regid);
     } else {
         if (senderUid && pUserId->is<CKeyID>()) {

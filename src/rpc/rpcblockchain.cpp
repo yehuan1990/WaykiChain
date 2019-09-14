@@ -256,7 +256,9 @@ Value getcontractregid(const Array& params, bool fHelp) {
     uint256 txid(uint256S(params[0].get_str()));
 
     int index = 0;
-    int nBlockHeight = GetTxConfirmHeight(txid, *pCdMan->pContractCache);
+
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    int nBlockHeight = GetTxConfirmHeight(txid, spCW->contractCache);
     if (nBlockHeight > chainActive.Height()) {
         throw runtime_error("height bigger than tip block");
     } else if (-1 == nBlockHeight) {

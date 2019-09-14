@@ -30,11 +30,12 @@
 
 #include "json/json_spirit_utils.h"
 #include "json/json_spirit_value.h"
-
+#include "consensus/forkpool.h"
 using namespace json_spirit;
 using namespace std;
 
 static bool fMining = false;
+extern CForkPool forkPool ;
 
 void SetMinerStatus(bool bStatus) { fMining = bStatus; }
 static bool GetMiningInfo() { return fMining; }
@@ -65,10 +66,11 @@ Value setgenerate(const Array& params, bool fHelp) {
     pWalletMain->GetKeys(setKeyId, true);
 
     bool bSetEmpty(true);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     for (auto & keyId : setKeyId) {
         CUserID userId(keyId);
         CAccount acctInfo;
-        if (pCdMan->pAccountCache->GetAccount(userId, acctInfo)) {
+        if (spCW->accountCache.GetAccount(userId, acctInfo)) {
             bSetEmpty = false;
             break;
         }

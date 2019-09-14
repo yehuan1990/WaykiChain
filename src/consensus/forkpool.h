@@ -34,6 +34,7 @@ public:
     unordered_map<uint256,CBlock,CUint256Hasher> blocks ;
 
     unordered_map<uint256,int, CUint256Hasher> unCheckedTxHashes ;
+    unordered_map<uint256, std::shared_ptr<CBaseTx>, CUint256Hasher> unCheckedTx ;
 
     CBlock tipBlock  ;
 
@@ -45,8 +46,11 @@ private:
     bool InsertBlock(CBlock& block){
         blocks.insert({block.GetHash(), block});
         for( auto tx: block.vptx){
-            if(!unCheckedTxHashes.count(tx->GetHash()))
+            if(!unCheckedTxHashes.count(tx->GetHash())){
                 unCheckedTxHashes.insert({tx->GetHash(),1});
+                unCheckedTx.insert({tx->GetHash(), tx}) ;
+            }
+
             else
                 unCheckedTxHashes.insert({tx->GetHash(),unCheckedTxHashes[tx->GetHash()]+1}) ;
         }

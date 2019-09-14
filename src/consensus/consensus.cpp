@@ -39,7 +39,7 @@ bool DeterminePreBlock(const int origin, CBlock& block){
 
     unordered_map<string, int> minerMap ;
     int confirmMiners = 4 ;
-    if(preBlock.GetHeight()<(int32_t)SysCfg().GetStableCoinGenesisHeight()-10000  && SysCfg().NetworkID() == MAIN_NET){
+    if(preBlock.GetHeight()<(int32_t)SysCfg().GetStableCoinGenesisHeight()-100  && SysCfg().NetworkID() != REGTEST_NET){
         confirmMiners = 1 ;
     } else{
         confirmMiners = 8 ;
@@ -54,11 +54,12 @@ bool DeterminePreBlock(const int origin, CBlock& block){
         minerMap.insert({GetMinerAccountFromBlock(block), 1}) ;
     }
 
-    if(newIrreversibleBlocks.size() >0){
 
-        for(const auto &block: tempBlocks){
-            LogPrint("INFO","forkPool find irreblock from: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
-        }
+     for(const auto &block: tempBlocks){
+         LogPrint("INFO","forkPool find irreblock from: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;
+     }
+
+    if(newIrreversibleBlocks.size() >0){
 
         for(const auto &block: newIrreversibleBlocks){
             LogPrint("INFO","forkPool find irreblock ,that's: HASH=%s,PREHASH=%s，HEIGHT=%d, MINER=%s\n", block.GetHash().GetHex(),block.GetPrevBlockHash().GetHex(),block.GetHeight(),GetMinerAccountFromBlock( block)) ;

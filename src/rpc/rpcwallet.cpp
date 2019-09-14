@@ -315,14 +315,15 @@ Value submitsendtx(const Array& params, bool fHelp) {
     ComboMoney cmCoin  = RPC_PARAM::GetComboMoney(params[2], SYMB::WICC);
     ComboMoney cmFee   = RPC_PARAM::GetFee(params, 3, UCOIN_TRANSFER_TX);
 
-    auto pSymbolErr = pCdMan->pAssetCache->CheckTransferCoinSymbol(cmCoin.symbol);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    auto pSymbolErr = spCW->assetCache.CheckTransferCoinSymbol(cmCoin.symbol);
     if (pSymbolErr)
         throw JSONRPCError(REJECT_INVALID, strprintf("Invalid coin symbol=%s! %s", cmCoin.symbol, *pSymbolErr));
 
     if (cmCoin.amount == 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Coins is zero!");
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, sendUserId);
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, sendUserId);
     RPC_PARAM::CheckAccountBalance(account, cmCoin.symbol, SUB_FREE, cmCoin.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
@@ -377,6 +378,7 @@ Value genmulsigtx(const Array& params, bool fHelp) {
 
     EnsureWalletIsUnlocked();
 
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     vector<unsigned char> multiScript = ParseHex(params[0].get_str());
     if (multiScript.empty() || multiScript.size() > MAX_MULSIG_SCRIPT_SIZE) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid script size");
@@ -391,7 +393,7 @@ Value genmulsigtx(const Array& params, bool fHelp) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid recvaddress");
     }
 
-    recvUserId = (pCdMan->pAccountCache->GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
+    recvUserId = (spCW->accountCache.GetRegId(CUserID(recvKeyId), recvRegId) && recvRegId.IsMature(chainActive.Height()))
                      ? CUserID(recvRegId)
                      : CUserID(recvKeyId);
 
@@ -418,7 +420,7 @@ Value genmulsigtx(const Array& params, bool fHelp) {
     vector<CSignaturePair> signaturePairs;
     CRegID regId;
     for (const auto& pubKey : pubKeys) {
-        if (pCdMan->pAccountCache->GetRegId(CUserID(pubKey), regId) && regId.IsMature(chainActive.Height())) {
+        if (spCW->accountCache.GetRegId(CUserID(pubKey), regId) && regId.IsMature(chainActive.Height())) {
             signaturePairs.push_back(CSignaturePair(regId, UnsignedCharArray()));
         } else {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Immature regid or invalid key");
@@ -457,8 +459,8 @@ Value getcontractassets(const Array& params, bool fHelp) {
     if (regid.IsEmpty() == true) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid contract regid");
     }
-
-    if (!pCdMan->pContractCache->HaveContract(regid)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->contractCache.HaveContract(regid)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to find contract");
     }
 
@@ -482,7 +484,7 @@ Value getcontractassets(const Array& params, bool fHelp) {
 
         string addr = keyId.ToAddress();
         std::shared_ptr<CAppUserAccount> temp = std::make_shared<CAppUserAccount>();
-        if (!pCdMan->pContractCache->GetContractAccount(regid, addr, *temp.get())) {
+        if (!spCW->contractCache.GetContractAccount(regid, addr, *temp.get())) {
             continue;
         }
 

@@ -89,7 +89,8 @@ Value submitpricefeedtx(const Array& params, bool fHelp) {
     const ComboMoney &cmFee = RPC_PARAM::GetFee(params, 2, PRICE_FEED_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, feedUid);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, feedUid);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     int32_t validHeight = chainActive.Height();
@@ -127,7 +128,8 @@ Value submitcoinstaketx(const Array& params, bool fHelp) {
     BalanceOpType stakeType = coinAmount >= 0 ? BalanceOpType::STAKE : BalanceOpType::UNSTAKE;
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     CCoinStakeTx tx(userId, validHeight, cmFee.symbol, cmFee.GetSawiAmount(), stakeType, coinSymbol, std::abs(coinAmount));
@@ -190,7 +192,8 @@ Value submitcdpstaketx(const Array& params, bool fHelp) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "mint_amount is zero!");
     }
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, cdpUid);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, cdpUid);
 
     CCDPStakeTx tx(cdpUid, validHeight, cdpId, cmFee, cmBcoinsToStake, cmScoinsToMint);
     return SubmitTx(account.keyid, tx);
@@ -231,7 +234,8 @@ Value submitcdpredeemtx(const Array& params, bool fHelp) {
     const ComboMoney& cmFee = RPC_PARAM::GetFee(params, 4, CDP_STAKE_TX);
     int32_t validHeight     = forkPool.TipHeight();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, cdpUid);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, cdpUid);
 
     CCDPRedeemTx tx(cdpUid, cmFee, validHeight, cdpTxId, repayAmount, redeemAmount);
     return SubmitTx(account.keyid, tx);
@@ -271,7 +275,8 @@ Value submitcdpliquidatetx(const Array& params, bool fHelp) {
     const ComboMoney& cmFee  = RPC_PARAM::GetFee(params, 3, CDP_STAKE_TX);
     int32_t validHeight      = forkPool.TipHeight();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, cdpUid);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, cdpUid);
 
     CCDPLiquidateTx tx(cdpUid, cmFee, validHeight, cdpTxId, liquidateAmount);
     return SubmitTx(account.keyid, tx);
@@ -387,20 +392,20 @@ Value getusercdp(const Array& params, bool fHelp){
     }
 
     CAccount account;
-    if (!pCdMan->pAccountCache->GetAccount(*pUserId, account)) {
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->accountCache.GetAccount(*pUserId, account)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("The account not exists! userId=%s", pUserId->ToString()));
     }
 
     int32_t height = forkPool.TipHeight();
     uint64_t slideWindow;
-
     spCW->sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
     // TODO: multi stable coin
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
+    uint64_t bcoinMedianPrice = spCW->ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     Array cdps;
     vector<CUserCDP> userCdps;
-    if (pCdMan->pCdpCache->GetCDPList(account.regid, userCdps)) {
+    if (spCW->cdpCache.GetCDPList(account.regid, userCdps)) {
         for (auto& cdp : userCdps) {
             cdps.push_back(cdp.ToJson(bcoinMedianPrice));
         }
@@ -431,7 +436,7 @@ Value getcdp(const Array& params, bool fHelp){
     auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     spCW->sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
     // TODO: multi stable coin
-    uint64_t bcoinMedianPrice = pCdMan->pPpCache->GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
+    uint64_t bcoinMedianPrice = spCW->ppCache.GetMedianPrice(height, slideWindow, CoinPricePair(SYMB::WICC, SYMB::USD));
 
     uint256 cdpTxId(uint256S(params[0].get_str()));
     CUserCDP cdp;
@@ -476,7 +481,8 @@ Value submitdexbuylimitordertx(const Array& params, bool fHelp) {
     ComboMoney cmFee               = RPC_PARAM::GetFee(params, 5, DEX_LIMIT_BUY_ORDER_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
     uint64_t coinAmount = CDEXOrderBaseTx::CalcCoinAmount(assetAmount, price);
     RPC_PARAM::CheckAccountBalance(account, coinSymbol, FREEZE, coinAmount);
@@ -518,7 +524,8 @@ Value submitdexselllimitordertx(const Array& params, bool fHelp) {
     ComboMoney cmFee               = RPC_PARAM::GetFee(params, 5, DEX_LIMIT_SELL_ORDER_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, assetSymbol, FREEZE, assetAmount);
 
@@ -557,7 +564,8 @@ Value submitdexbuymarketordertx(const Array& params, bool fHelp) {
     ComboMoney cmFee               = RPC_PARAM::GetFee(params, 4, DEX_MARKET_BUY_ORDER_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, coinSymbol, FREEZE, coinAmount);
 
@@ -594,7 +602,8 @@ Value submitdexsellmarketordertx(const Array& params, bool fHelp) {
     ComboMoney cmFee               = RPC_PARAM::GetFee(params, 4, DEX_MARKET_SELL_ORDER_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, assetSymbol, FREEZE, assetAmount);
 
@@ -631,7 +640,8 @@ Value submitdexcancelordertx(const Array& params, bool fHelp) {
     ComboMoney cmFee      = RPC_PARAM::GetFee(params, 2, DEX_MARKET_SELL_ORDER_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     // check active order tx
@@ -703,7 +713,8 @@ Value submitdexsettletx(const Array& params, bool fHelp) {
     }
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, userId);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, userId);
     RPC_PARAM::CheckAccountBalance(account, fee.symbol, SUB_FREE, fee.GetSawiAmount());
 
     int32_t validHeight = forkPool.TipHeight();
@@ -901,7 +912,8 @@ Value submitassetissuetx(const Array& params, bool fHelp) {
     ComboMoney cmFee = RPC_PARAM::GetFee(params, 6, TxType::ASSET_ISSUE_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, uid);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, uid);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     uint64_t assetIssueFee; //550 WICC
@@ -915,7 +927,7 @@ Value submitassetissuetx(const Array& params, bool fHelp) {
     if (account.IsMyUid(assetOwnerUid)) {
         pOwnerRegid = &account.regid;
     } else {
-        ownerAccount = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, assetOwnerUid);
+        ownerAccount = RPC_PARAM::GetUserAccount(spCW->accountCache, assetOwnerUid);
         pOwnerRegid = &ownerAccount.regid;
     }
 
@@ -1014,7 +1026,8 @@ Value submitassetupdatetx(const Array& params, bool fHelp) {
     ComboMoney cmFee = RPC_PARAM::GetFee(params, 4, TxType::ASSET_UPDATE_TX);
 
     // Get account for checking balance
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, uid);
+    auto  spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, uid);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     uint64_t assetUpdateFee;
@@ -1030,7 +1043,7 @@ Value submitassetupdatetx(const Array& params, bool fHelp) {
             return JSONRPCError(RPC_INVALID_PARAMS, strprintf("the new owner uid=%s is belong to old owner account",
                     ownerUid.ToDebugString()));
 
-        CAccount newAccount = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, ownerUid);
+        CAccount newAccount = RPC_PARAM::GetUserAccount(spCW->accountCache, ownerUid);
         if (!newAccount.IsRegistered())
             return JSONRPCError(RPC_INVALID_PARAMS, strprintf("the new owner account is not registered! new uid=%s",
                     ownerUid.ToDebugString()));
@@ -1067,7 +1080,7 @@ extern Value getassets(const Array& params, bool fHelp) {
     Array assetArray;
     for (auto &item : pGetter->data_list) {
         const CAsset &asset = item.second;
-        assetArray.push_back(AssetToJson(*pCdMan->pAccountCache, asset));
+        assetArray.push_back(AssetToJson(spCW->accountCache, asset));
     }
 
     Object obj;

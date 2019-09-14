@@ -73,7 +73,8 @@ Value submitaccountregistertx(const Array& params, bool fHelp) {
     int64_t fee          = RPC_PARAM::GetWiccFee(params, 1, ACCOUNT_REGISTER_TX);
     int32_t validHegiht  = chainActive.Height();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
 
     if (account.HaveOwnerPubKey())
@@ -132,8 +133,8 @@ Value submitcontractdeploytx(const Array& params, bool fHelp) {
 
     if (memo.size() > MAX_CONTRACT_MEMO_SIZE)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Contract memo is too large");
-
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
 
     CLuaContractDeployTx tx;
@@ -175,12 +176,14 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
     const CUserID& txUid  = RPC_PARAM::GetUserId(params[0], true);
     const CUserID& appUid = RPC_PARAM::GetUserId(params[1]);
 
+
     CRegID appRegId;
-    if (!pCdMan->pAccountCache->GetRegId(appUid, appRegId)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->accountCache.GetRegId(appUid, appRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid contract regid");
     }
 
-    if (!pCdMan->pContractCache->HaveContract(appRegId)) {
+    if (!spCW->contractCache.HaveContract(appRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract");
     }
 
@@ -193,7 +196,7 @@ Value submitcontractcalltx(const Array& params, bool fHelp) {
     int64_t fee         = RPC_PARAM::GetWiccFee(params, 4, LCONTRACT_INVOKE_TX);
     int32_t validHegiht = (params.size() > 5) ? params[5].get_int() : chainActive.Height();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, amount);
     RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
 
@@ -247,12 +250,12 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
     RPCTypeCheck(params, list_of(str_type)(array_type)(int_type)(int_type));
 
     EnsureWalletIsUnlocked();
-
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     const CUserID& txUid = RPC_PARAM::GetUserId(params[0], true);
     int64_t fee          = RPC_PARAM::GetWiccFee(params, 2, DELEGATE_VOTE_TX);
     int32_t validHegiht  = params.size() > 3 ? params[3].get_int() : chainActive.Height();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, SYMB::WICC, SUB_FREE, fee);
 
     CDelegateVoteTx delegateVoteTx;
@@ -272,7 +275,7 @@ Value submitdelegatevotetx(const Array& params, bool fHelp) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address error");
         }
         CAccount delegateAcct;
-        if (!pCdMan->pAccountCache->GetAccount(CUserID(delegateKeyId), delegateAcct)) {
+        if (!spCW->accountCache.GetAccount(CUserID(delegateKeyId), delegateAcct)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Delegate address is not exist");
         }
         if (!delegateAcct.HaveOwnerPubKey()) {
@@ -319,8 +322,8 @@ Value submituniversalcontractdeploytx(const Array& params, bool fHelp) {
     ComboMoney cmFee      = RPC_PARAM::GetFee(params, 2, UCONTRACT_DEPLOY_TX);
     int32_t validHegiht   = params.size() > 3 ? params[3].get_int() : chainActive.Height();
     string memo           = params.size() > 4 ? params[4].get_str() : "";
-
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
     if (memo.size() > MAX_CONTRACT_MEMO_SIZE)
@@ -370,11 +373,12 @@ Value submituniversalcontractcalltx(const Array& params, bool fHelp) {
     const CUserID& appUid = RPC_PARAM::GetUserId(params[1]);
 
     CRegID appRegId;
-    if (!pCdMan->pAccountCache->GetRegId(appUid, appRegId)) {
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    if (!spCW->accountCache.GetRegId(appUid, appRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid contract regid");
     }
 
-    if (!pCdMan->pContractCache->HaveContract(appRegId)) {
+    if (!spCW->contractCache.HaveContract(appRegId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Failed to acquire contract");
     }
 
@@ -387,7 +391,7 @@ Value submituniversalcontractcalltx(const Array& params, bool fHelp) {
     ComboMoney cmFee    = RPC_PARAM::GetFee(params, 4, UCONTRACT_INVOKE_TX);
     int32_t validHegiht = (params.size() > 5) ? params[5].get_int() : chainActive.Height();
 
-    CAccount account = RPC_PARAM::GetUserAccount(*pCdMan->pAccountCache, txUid);
+    CAccount account = RPC_PARAM::GetUserAccount(spCW->accountCache, txUid);
     RPC_PARAM::CheckAccountBalance(account, cmCoin.symbol, SUB_FREE, cmCoin.GetSawiAmount());
     RPC_PARAM::CheckAccountBalance(account, cmFee.symbol, SUB_FREE, cmFee.GetSawiAmount());
 
@@ -428,6 +432,7 @@ Value listaddr(const Array& params, bool fHelp) {
         for (const auto &keyId : setKeyId) {
             CUserID userId(keyId);
             CAccount account;
+            auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
             spCW->accountCache.GetAccount(userId, account);
             CKeyCombi keyCombi;
             pWalletMain->GetKeyCombi(keyId, keyCombi);
@@ -599,7 +604,7 @@ Value getaccountinfo(const Array& params, bool fHelp) {
     }
 
     if (found) {
-        int32_t height       = chainActive.Height();
+        int32_t height       = forkPool.TipHeight();
         uint64_t slideWindow = 0;
         spCW->sysParamCache.GetParam(SysParamType::MEDIAN_PRICE_SLIDE_WINDOW_BLOCKCOUNT, slideWindow);
         // TODO: multi stable coin
@@ -628,6 +633,7 @@ static Value TestDisconnectBlock(int32_t number) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid number");
     }
     if (number > 0) {
+
         do {
             CBlockIndex * pTipIndex = chainActive.Tip();
             if (!DisconnectBlockFromTip(state))
@@ -755,7 +761,8 @@ Value listtxcache(const Array& params, bool fHelp) {
                 "\"txcache\"  (string)\n"
                 "\nExamples:\n" + HelpExampleCli("listtxcache", "")+ HelpExampleRpc("listtxcache", ""));
     }
-    const map<uint256, UnorderedHashSet> &mapBlockTxHashSet = pCdMan->pTxCache->GetTxHashCache();
+    auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
+    const map<uint256, UnorderedHashSet> &mapBlockTxHashSet = spCW->txCache.GetTxHashCache();
 
     Array retTxHashArray;
     for (auto &item : mapBlockTxHashSet) {
@@ -1285,7 +1292,7 @@ Value gettotalcoins(const Array& params, bool fHelp) {
     uint64_t totalRegIds(0);
     auto spCW = std::make_shared<CCacheWrapper>(*(forkPool.spCW)) ;
     std::tie(totalCoins, totalRegIds) = spCW->accountCache.TraverseAccount();
-    // auto [totalCoins, totalRegIds] = pCdMan->pAccountCache->TraverseAccount(); //C++17
+    // auto [totalCoins, totalRegIds] = spCW->accountCache.TraverseAccount(); //C++17
     obj.push_back(Pair("total_coins", ValueFromAmount(totalCoins)));
     obj.push_back(Pair("total_regids", totalRegIds));
 
