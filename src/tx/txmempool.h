@@ -80,6 +80,7 @@ public:
                           bool bExecute = true);
     void SetMemPoolCache(CCacheDBManager *pCdManIn);
     void ReScanMemPoolTx(CCacheDBManager *pCdManIn);
+    void ReScanMemPoolTx(CCacheWrapper& spCW);
     void Clear();
 
     uint64_t Size();

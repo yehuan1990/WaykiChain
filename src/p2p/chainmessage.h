@@ -741,7 +741,7 @@ inline void ProcessBlockMessage(CNode *pFrom, CDataStream &vRecv){
     CBlock block;
     vRecv >> block;
 
-    LogPrint("net", "received block %s from %s\n", block.GetHash().ToString(), pFrom->addr.ToString());
+    LogPrint("net", "received block height= %d  %s from %s\n", block.GetHeight(), block.GetHash().ToString(), pFrom->addr.ToString());
     // block.Print();
 
     CInv inv(MSG_BLOCK, block.GetHash());

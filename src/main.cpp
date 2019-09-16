@@ -2126,7 +2126,7 @@ bool persistBlock(CBlock &irrBlock, CValidationState &state, CDiskBlockPos *dbp)
 
 static bool inProcessConsensus = false;
 CCriticalSection cs_processConsensus;
-bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
+bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp, CBlock currentBlock){
 
     {
         LOCK(cs_processConsensus) ;
@@ -2139,9 +2139,11 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
 
 
     vector<CBlock> irreversibleList ;
-    CBlock preBlock ;
-    DeterminePreBlock(1, preBlock) ;
-    DetermineIrreversibleList( preBlock, irreversibleList) ;
+  //  CBlock preBlock ;
+  //  DeterminePreBlock(1, preBlock) ;
+
+    DetermineIrreversibleList( forkPool.tipBlock, irreversibleList) ;
+
     for( auto irrBlock: irreversibleList){
 
         bool consensusResult = persistBlock(irrBlock,state, dbp);
@@ -2151,8 +2153,10 @@ bool ThreadProcessConsensus( CValidationState &state, CDiskBlockPos *dbp){
         }
 
         forkPool.RemoveUnderHeight(irrBlock.GetHeight()) ;
-
     }
+
+    //forkPool.UpdateAfterConsensus(irreversibleList.size() > 0 ) ;
+
     inProcessConsensus = false ;
     return true ;
 }
@@ -2254,7 +2258,7 @@ bool AcceptBlock(CBlock &block, CValidationState &state, CDiskBlockPos *dbp) {
         mempool.memPoolTxs.erase(pTxItem->GetHash());
     }
 
-    ThreadProcessConsensus(state, dbp) ;
+    ThreadProcessConsensus(state, dbp,block) ;
 
     return true;
 }
@@ -2332,13 +2336,13 @@ void PushGetBlocks(CNode *pNode, CBlockIndex *pindexBegin, uint256 hashEnd) {
     // Ask this guy to fill in what we're missing
     AssertLockHeld(cs_main);
     // Filter out duplicate requests
-    if (pindexBegin == pNode->pindexLastGetBlocksBegin && hashEnd == pNode->hashLastGetBlocksEnd) {
+    if (/*pindexBegin == pNode->pindexLastGetBlocksBegin && */hashEnd == pNode->hashLastGetBlocksEnd) {
         LogPrint("net", "filter the same GetLocator\n");
         return;
     }
     pNode->pindexLastGetBlocksBegin = pindexBegin;
     pNode->hashLastGetBlocksEnd     = hashEnd;
-    CBlockLocator blockLocator      = chainActive.GetLocator(pindexBegin);
+    CBlockLocator blockLocator      = forkPool.GetLocator() ; /*chainActive.GetLocator(pindexBegin);*/
     pNode->PushMessage("getblocks", blockLocator, hashEnd);
     LogPrint("net", "getblocks from peer %s, hashEnd:%s\n", pNode->addr.ToString(), hashEnd.GetHex());
 }

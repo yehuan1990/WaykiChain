@@ -37,9 +37,6 @@ boost::circular_buffer<MinedBlockInfo> minedBlocks(MAX_MINED_BLOCK_COUNT);
 CCriticalSection csMinedBlocks;
 
 
-
-
-
 // base on the last 50 blocks
 uint32_t GetElementForBurn(CBlockIndex *pIndex) {
     if (!pIndex) {
@@ -818,9 +815,15 @@ bool static MineBlock(CBlock *pBlock, CWallet *pWallet, CBlockIndex *pIndexPrev,
         if (vNodes.empty() && SysCfg().NetworkID() != REGTEST_NET)
             return false;
 
-        CBlock preBlock ;
-        DeterminePreBlock(5, preBlock) ;
-        if (preBlock.GetHash() != preBlock.GetHash())
+        CBlock newestPreBlock ;
+        DeterminePreBlock(5, newestPreBlock) ;
+
+
+
+        if(newestPreBlock.GetHeight() < nSyncTipHeight-100)
+            return false ;
+
+        if (newestPreBlock.GetHash() != preBlock.GetHash())
             return false;
 
         // Take a sleep and check.
@@ -972,7 +975,6 @@ void static CoinMiner(CWallet *pWallet, int32_t targetHeight) {
 
             forkPool.Init() ;
             auto spCW   = std::make_shared<CCacheWrapper>(*(forkPool.spCW));
-
 
 
 

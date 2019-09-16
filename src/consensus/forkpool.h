@@ -37,8 +37,10 @@ public:
     unordered_map<uint256, std::shared_ptr<CBaseTx>, CUint256Hasher> unCheckedTx ;
 
     CBlock tipBlock  ;
-
     shared_ptr<CCacheWrapper> spCW = nullptr ;
+
+    CBlock newestBlock ;
+    shared_ptr<CCacheWrapper> newestspCW = nullptr ;
 
 
 private:
@@ -76,6 +78,14 @@ public:
 
     bool OnConsensusFailed(CBlock& block) ;
     vector<CBlock> GetLongestTop(const vector<CBlock> longtestTops );
+
+    bool GetTops(vector<CBlock>& tops) ;
+
+    bool UpdateAfterConsensus(bool needUpdate) ;
+
+    CBlockLocator GetLocator() const ;
+
+    bool ReScanMempool(CBlock& block);
 };
 
 #endif //WAYKICHAIN_FORKPOOL_H

@@ -83,17 +83,28 @@ bool CForkPool::OnConsensusFailed(CBlock& block){
     unCheckedTxHashes.clear() ;
     unCheckedTx.clear() ;
 
-
     GetTipBlock(tipBlock);
     spCW = std::make_shared<CCacheWrapper>(pCdMan) ;
 
     return true ;
 }
 
+bool CForkPool::ReScanMempool(CBlock& block){
+
+    //delete txs of this block from mempool
+    for (auto &pTxItem : block.vptx) {
+        mempool.memPoolTxs.erase(pTxItem->GetHash());
+    }
+
+
+}
+
+
 bool CForkPool::AddBlock(CBlock &block) {
 
     LOCK(cs_forkpool) ;
 
+    bool  needRescanMempool = false ;
     Init() ;
 
     if(block.GetPrevBlockHash() == tipBlock.GetHash()){
@@ -129,10 +140,14 @@ bool CForkPool::AddBlock(CBlock &block) {
 
 
             InsertBlock(block) ;
-            if(block.GetHeight()> tipBlock.GetHeight() || block.GetTime() < tipBlock.GetTime()){
 
+            if(block.GetHeight() > tipBlock.GetHeight() || (block.GetHeight() == tipBlock.GetHeight() && block.GetTime() < tipBlock.GetTime())){
+
+                LogPrint("INFO", "tipBlock change: oldHeight=%d, newHeight=%d, oldTime=%d, newtime=%d\n",tipBlock.GetHeight(),block.GetHeight(),tipBlock.GetTime(), block.GetTime() )
                 tipBlock = block ;
                 *spCW =  *activeTipCache;
+                needRescanMempool = true ;
+
             }
 
         }else{
@@ -296,4 +311,27 @@ vector<CBlock> CForkPool::GetLongestTop(const vector<CBlock> longtestTops ){
     else
         return GetLongestTop(newLongestTops);
 
+}
+
+
+bool CForkPool::UpdateAfterConsensus(bool needUpdate){
+
+    if(needUpdate && newestBlock.GetHash() != tipBlock.GetHash()){
+        tipBlock = newestBlock ;
+        *spCW = *newestspCW ;
+    }
+}
+bool CForkPool::GetTops(vector<CBlock>& tops) {
+
+
+
+    return true ;
+}
+
+
+CBlockLocator CForkPool::GetLocator() const {
+    int32_t nStep = 1;
+    vector<uint256> vHave;
+    vHave.push_back(tipBlock.GetHash());
+    return CBlockLocator(vHave);
 }

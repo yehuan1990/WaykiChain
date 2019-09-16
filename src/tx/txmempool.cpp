@@ -147,6 +147,24 @@ void CTxMemPool::ReScanMemPoolTx(CCacheDBManager *pCdManIn) {
     }
 }
 
+
+void CTxMemPool::ReScanMemPoolTx(CCacheWrapper& spCW) {
+    cw.reset(new  CCacheWrapper(spCW));
+
+    LOCK(cs);
+    CValidationState state;
+    for (map<uint256, CTxMemPoolEntry>::iterator iterTx = memPoolTxs.begin(); iterTx != memPoolTxs.end();) {
+        if (!CheckTxInMemPool(iterTx->first, iterTx->second, state, true)) {
+            uint256 txid = iterTx->first;
+            iterTx       = memPoolTxs.erase(iterTx++);
+            EraseTransaction(txid);
+            continue;
+        }
+        ++iterTx;
+    }
+}
+
+
 void CTxMemPool::Clear() {
     LOCK(cs);
 
