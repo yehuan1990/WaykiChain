@@ -63,6 +63,20 @@ static const unordered_map<string, uint64_t, CoinUnitTypeHash> CoinUnitTypeTable
     {"kwi",  100000000000       },  // 1000
     {"mwi",  100000000000000    },  // 1000,000
 };
+static const unordered_map<string,int8_t ,CoinUnitTypeHash> CoinUnitPrecisionTable{
+        {"sawi", 0              },  // 0.00000001
+        {"quwi", 1              },  // 0.0000001
+        {"muwi", 2              },  // 0.000001
+        {"huwi", 3              },  // 0.00001
+        {"siwi", 4              },  // 0.0001
+        {"miwi", 5              },  // 0.001
+        {"lewi", 6              },  // 0.01
+        {"fewi", 7              },  // 0.1
+        {"wi",   8              },  // 1
+        {"kwi",  8              },  // 1000
+        {"mwi",  8              },  // 1000,000
+
+};
 
 static const uint64_t COIN = 100000000;  //10^8 = 1 WICC
 static const uint64_t CENT = 1000000;    //10^6 = 0.01 WICC

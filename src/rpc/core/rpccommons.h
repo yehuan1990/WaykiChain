@@ -83,6 +83,30 @@ inline bool is_number(const std::string& s) {
         s.end(), [](char c) { return !std::isdigit(c); }) == s.end();
 }
 
+
+bool is_decimal(const string& s ){
+    int pointCount = 0 ;
+    if(s.size() ==0)
+        return false ;
+    int i = 0 ;
+    for( ; i< s.size();i++){
+        if(std::isdigit(s[i])){
+            continue ;
+        }
+        if(s[i] == '.'){
+            pointCount++;
+            continue;
+        }
+        else return false ;
+    }
+    if(pointCount !=1)
+        return false ;
+    if(s[0]=='.' || s[s.size()-1] =='.')
+        return false;
+
+    return true ;
+
+}
 // [N|R|A]:address
 // NickID (default) | RegID | Address
 bool ParseRpcInputAccountId(const string &comboAccountIdStr, tuple<AccountIDType, string> &comboAccountId);

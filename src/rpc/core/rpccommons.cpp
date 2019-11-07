@@ -87,6 +87,109 @@ bool ParseRpcInputAccountId(const string &comboAccountIdStr, tuple<AccountIDType
     return true;
 }
 
+
+bool parseAmountAndUnit( vector<string>& comboMoneyArr, ComboMoney& comboMoney,const TokenSymbol &defaultSymbol = SYMB::WICC){
+
+    int64_t iValue = 0 ;
+
+    string strUnit = comboMoneyArr[1];
+    std::for_each(strUnit.begin(), strUnit.end(), [](char &c) { c = ::tolower(c); });
+    if (!CoinUnitTypeTable.count(strUnit))
+        return false;
+    if(is_number(comboMoneyArr[0]))
+        iValue = std::atoll(comboMoneyArr[0].c_str())* CoinUnitTypeTable.find(strUnit)->second ;
+    else{
+        iValue = std::atof(comboMoneyArr[0].c_str()) * CoinUnitTypeTable.find(strUnit)->second ;
+    }
+
+    if (iValue < 0)
+        return false;
+
+    comboMoney.symbol = defaultSymbol;
+    comboMoney.amount = (uint64_t) iValue;
+    comboMoney.unit   = COIN_UNIT::SAWI;
+
+    return true ;
+}
+
+bool parseSymbolAndAmount(vector<string>& comboMoneyArr, ComboMoney& comboMoney){
+
+    if (comboMoneyArr[0].size() > MAX_TOKEN_SYMBOL_LEN) // check symbol len
+        return false;
+
+    int64_t iValue = std::atoll(comboMoneyArr[1].c_str());
+    if (iValue < 0)
+        return false;
+
+    string strSymbol = comboMoneyArr[0];
+    std::for_each(strSymbol.begin(), strSymbol.end(), [](char &c) { c = ::toupper(c); });
+
+    comboMoney.symbol = strSymbol;
+    comboMoney.amount = (uint64_t)iValue;
+    comboMoney.unit   = COIN_UNIT::SAWI;
+
+    return true ;
+}
+
+// [symbol]:amount:[unit]
+// [WICC(default)|WUSD|WGRT|...]:amount:[sawi(default)]
+bool ParseRpcInputMoney(const string &comboMoneyStr, ComboMoney &comboMoney, const TokenSymbol defaultSymbol) {
+    vector<string> comboMoneyArr = split(comboMoneyStr, ':');
+
+    switch (comboMoneyArr.size()) {
+        case 1: {
+            if (!is_number(comboMoneyArr[0]))
+                return false;
+
+            int64_t iValue = std::atoll(comboMoneyArr[0].c_str());
+            if (iValue < 0)
+                return false;
+
+            comboMoney.symbol = defaultSymbol;
+            comboMoney.amount = (uint64_t)iValue;
+            comboMoney.unit   = COIN_UNIT::SAWI;
+            break;
+        }
+
+        case 2: {
+            if (is_number(comboMoneyArr[0]) || is_decimal(comboMoneyArr[0])) {
+
+                return parseAmountAndUnit(comboMoneyArr, comboMoney) ;
+
+            } else if (is_number(comboMoneyArr[1])) {
+                return parseSymbolAndAmount(comboMoneyArr,comboMoney);
+
+            } else {
+                return false;
+            }
+
+            break;
+        }
+        case 3: {
+            if (comboMoneyArr[0].size() > MAX_TOKEN_SYMBOL_LEN) // check symbol len
+                return false;
+
+            if (!is_number(comboMoneyArr[1]))
+                return false;
+
+            string strSymbol = comboMoneyArr[0];
+            std::for_each(strSymbol.begin(), strSymbol.end(), [](char &c) { c = ::toupper(c); });
+            vector<string> amountAndUnit ;
+            amountAndUnit.push_back(comboMoneyArr[1]);
+            amountAndUnit.push_back(comboMoneyArr[2]);
+            return parseAmountAndUnit(amountAndUnit,comboMoney,strSymbol) ;
+
+            break ;
+        }
+        default:
+            return false;
+    }
+
+    return true;
+}
+
+/*
+
 // [symbol]:amount:[unit]
 // [WICC(default)|WUSD|WGRT|...]:amount:[sawi(default)]
 bool ParseRpcInputMoney(const string &comboMoneyStr, ComboMoney &comboMoney, const TokenSymbol defaultSymbol) {
@@ -171,7 +274,7 @@ bool ParseRpcInputMoney(const string &comboMoneyStr, ComboMoney &comboMoney, con
     }
 
     return true;
-}
+}*/
 
 Object SubmitTx(const CKeyID &keyid, CBaseTx &tx) {
     if (!pWalletMain->HaveKey(keyid)) {
